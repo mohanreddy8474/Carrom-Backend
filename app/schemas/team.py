@@ -5,14 +5,13 @@ from pydantic import BaseModel, ConfigDict
 
 
 class TeamCreate(BaseModel):
-    team_name: str
     player1_id: uuid.UUID
     player2_id: uuid.UUID
     category_id: uuid.UUID
+    group_id: uuid.UUID
 
 
 class TeamUpdate(BaseModel):
-    team_name: str | None = None
     player1_id: uuid.UUID | None = None
     player2_id: uuid.UUID | None = None
     is_active: bool | None = None

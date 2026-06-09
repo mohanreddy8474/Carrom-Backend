@@ -73,10 +73,11 @@ const NAV_LINKS = [
 ];
 
 const CATEGORY_META: Record<string, { icon: React.ElementType; color: string }> = {
-  "Singles (Men)": { icon: Target, color: "from-blue-500/20 to-blue-600/5" },
-  "Singles (Women)": { icon: Zap, color: "from-pink-500/20 to-pink-600/5" },
-  "Doubles (Men)": { icon: Users, color: "from-emerald-500/20 to-emerald-600/5" },
-  "Doubles (Women)": { icon: Award, color: "from-purple-500/20 to-purple-600/5" },
+  "Men's Singles": { icon: Target, color: "from-blue-500/20 to-blue-600/5" },
+  "Women's Singles": { icon: Zap, color: "from-pink-500/20 to-pink-600/5" },
+  "Men's Doubles": { icon: Users, color: "from-emerald-500/20 to-emerald-600/5" },
+  "Women's Doubles": { icon: Award, color: "from-purple-500/20 to-purple-600/5" },
+  "Mixed Doubles": { icon: Users, color: "from-teal-500/20 to-teal-600/5" },
 };
 
 function getCategoryMeta(name: string) {
@@ -112,7 +113,9 @@ function scrollTo(id: string) {
 }
 
 function sortStandings(standings: PlayerStanding[]): PlayerStanding[] {
-  return [...standings].sort((a, b) => b.points - a.points || b.wins - a.wins || a.name.localeCompare(b.name));
+  return [...standings].sort(
+    (a, b) => b.points - a.points || b.score - a.score || b.wins - a.wins || a.name.localeCompare(b.name)
+  );
 }
 
 // ─── Decorative Components ─────────────────────────────────────────────────────
@@ -454,40 +457,46 @@ function StatsBar({
 // ─── Categories ────────────────────────────────────────────────────────────────
 
 function Categories({
-  categories,
+  tournament,
   onSelectCategory,
 }: {
-  categories: string[];
+  tournament: CategoryData[];
   onSelectCategory: (c: Category) => void;
 }) {
   return (
     <section id="categories" className="py-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <SectionHeader
-          title="Tournament Categories"
-          subtitle="Each category has separate groups — round-robin within every group"
-          icon={LayoutGrid}
-        />
+        <SectionHeader title="Tournament Categories" subtitle="Browse categories and their groups" icon={LayoutGrid} />
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {categories.map((name, i) => {
-            const { icon: Icon, color } = getCategoryMeta(name);
+          {tournament.map(({ category, groups }, i) => {
+            const { icon: Icon, color } = getCategoryMeta(category);
             return (
               <motion.div
-                key={name}
+                key={category}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.08 }}
               >
-                <button onClick={() => onSelectCategory(name)} className="w-full text-left">
+                <button onClick={() => onSelectCategory(category)} className="w-full text-left">
                   <GlassCard className={`bg-gradient-to-br ${color} h-full`}>
                     <div className="w-12 h-12 rounded-xl bg-white/80 dark:bg-slate-800/80 flex items-center justify-center mb-4">
                       <Icon className="w-6 h-6 text-accent-teal" />
                     </div>
-                    <h3 className="font-display text-xl font-bold text-slate-900 dark:text-white">{name}</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                      View groups, points & schedule →
-                    </p>
+                    <h3 className="font-display text-xl font-bold text-slate-900 dark:text-white">{category}</h3>
+                    {groups.length > 0 ? (
+                      <ul className="mt-3 space-y-1">
+                        {groups.map((group) => (
+                          <li key={group.id} className="text-sm text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                            <Circle className="w-2 h-2 fill-accent-teal text-accent-teal" />
+                            {group.name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">No groups yet</p>
+                    )}
+                    <p className="text-sm text-accent-teal mt-3 font-medium">View standings & matches →</p>
                   </GlassCard>
                 </button>
               </motion.div>
@@ -725,40 +734,127 @@ function AdminPanel({
   categories,
   players,
   teams,
+  tournament,
   onRefresh,
 }: {
   categories: ApiCategory[];
   players: ApiPlayer[];
   teams: ApiTeam[];
+  tournament: CategoryData[];
   onRefresh: () => Promise<void>;
 }) {
   const [playerName, setPlayerName] = useState("");
   const [playerEmployeeId, setPlayerEmployeeId] = useState("");
-  const [playerGender, setPlayerGender] = useState<Gender>("MALE");
-  const [teamName, setTeamName] = useState("");
+  const [playerGender, setPlayerGender] = useState<Gender | "">("");
   const [teamCategoryId, setTeamCategoryId] = useState("");
+  const [teamGroupId, setTeamGroupId] = useState("");
   const [teamPlayer1, setTeamPlayer1] = useState("");
   const [teamPlayer2, setTeamPlayer2] = useState("");
   const [groupName, setGroupName] = useState("");
   const [groupCategoryId, setGroupCategoryId] = useState("");
+  const [assignCategoryId, setAssignCategoryId] = useState("");
   const [assignGroupId, setAssignGroupId] = useState("");
   const [assignPlayerId, setAssignPlayerId] = useState("");
-  const [assignTeamId, setAssignTeamId] = useState("");
   const [message, setMessage] = useState("");
   const [groups, setGroups] = useState<{ id: string; name: string; category_id: string }[]>([]);
 
   useEffect(() => {
     api.getGroups().then(setGroups).catch(() => setGroups([]));
-  }, [categories]);
+  }, [categories, tournament]);
 
-  const doublesCategories = categories.filter((c) => c.format === "DOUBLES");
   const activePlayers = players.filter((p) => p.is_active);
+  const singlesCategories = categories.filter((c) => c.format === "SINGLES");
+  const doublesCategories = categories.filter((c) => c.format === "DOUBLES");
 
-  const runAction = async (action: () => Promise<unknown>, success: string) => {
+  const assignedPlayerIdsInCategory = (categoryId: string) => {
+    const categoryData = tournament.find((c) => c.categoryId === categoryId);
+    if (!categoryData) return new Set<string>();
+    return new Set(categoryData.groups.flatMap((g) => g.standings.map((s) => s.id)));
+  };
+
+  const playersOnTeamsInCategory = (categoryId: string) => {
+    const ids = new Set<string>();
+    teams
+      .filter((t) => t.is_active && t.category_id === categoryId)
+      .forEach((t) => {
+        ids.add(t.player1_id);
+        ids.add(t.player2_id);
+      });
+    return ids;
+  };
+
+  const groupsForCategory = (categoryId: string) =>
+    groups.filter((g) => g.category_id === categoryId);
+
+  const availableSinglesPlayers = (categoryId: string) => {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return [];
+    const assigned = assignedPlayerIdsInCategory(categoryId);
+    return activePlayers.filter((p) => {
+      if (assigned.has(p.id)) return false;
+      if (category.gender === "MALE") return p.gender === "MALE";
+      if (category.gender === "FEMALE") return p.gender === "FEMALE";
+      return false;
+    });
+  };
+
+  const availableDoublesPlayers = (categoryId: string, excludeId?: string) => {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return [];
+    const onTeam = playersOnTeamsInCategory(categoryId);
+    return activePlayers.filter((p) => {
+      if (p.id === excludeId) return false;
+      if (onTeam.has(p.id)) return false;
+      if (category.gender === "MALE") return p.gender === "MALE";
+      if (category.gender === "FEMALE") return p.gender === "FEMALE";
+      return true;
+    });
+  };
+
+  const teamPlayer2Options = (categoryId: string, player1Id: string) => {
+    const category = categories.find((c) => c.id === categoryId);
+    const player1 = activePlayers.find((p) => p.id === player1Id);
+    if (!category || !player1) return availableDoublesPlayers(categoryId, player1Id);
+    if (category.gender === "MIXED") {
+      return availableDoublesPlayers(categoryId, player1Id).filter((p) => p.gender !== player1.gender);
+    }
+    return availableDoublesPlayers(categoryId, player1Id);
+  };
+
+  const resetPlayerForm = () => {
+    setPlayerName("");
+    setPlayerEmployeeId("");
+    setPlayerGender("");
+  };
+
+  const resetAssignForm = () => {
+    setAssignCategoryId("");
+    setAssignGroupId("");
+    setAssignPlayerId("");
+  };
+
+  const resetTeamForm = () => {
+    setTeamCategoryId("");
+    setTeamGroupId("");
+    setTeamPlayer1("");
+    setTeamPlayer2("");
+  };
+
+  const resetGroupForm = () => {
+    setGroupName("");
+    setGroupCategoryId("");
+  };
+
+  const runAction = async (
+    action: () => Promise<unknown>,
+    success: string,
+    onSuccess?: () => void
+  ) => {
     setMessage("");
     try {
       await action();
       setMessage(success);
+      onSuccess?.();
       await onRefresh();
       const updatedGroups = await api.getGroups();
       setGroups(updatedGroups);
@@ -777,54 +873,155 @@ function AdminPanel({
           <h4 className="font-semibold">Add Player</h4>
           <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 rounded-lg glass" />
           <input value={playerEmployeeId} onChange={(e) => setPlayerEmployeeId(e.target.value)} placeholder="Employee ID" className="w-full px-3 py-2 rounded-lg glass" />
-          <select value={playerGender} onChange={(e) => setPlayerGender(e.target.value as Gender)} className="w-full px-3 py-2 rounded-lg glass">
+          <select value={playerGender} onChange={(e) => setPlayerGender(e.target.value as Gender | "")} className="w-full px-3 py-2 rounded-lg glass">
+            <option value="">Select gender</option>
             <option value="MALE">Male</option>
             <option value="FEMALE">Female</option>
           </select>
           <button
             onClick={() =>
               runAction(
-                () => api.createPlayer({ name: playerName, employee_id: playerEmployeeId || undefined, gender: playerGender }),
-                "Player created"
+                () =>
+                  api.createPlayer({
+                    name: playerName,
+                    employee_id: playerEmployeeId || undefined,
+                    gender: playerGender as Gender,
+                  }),
+                "Player created",
+                resetPlayerForm
               )
             }
-            className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm"
+            disabled={!playerName.trim() || !playerGender}
+            className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm disabled:opacity-50"
           >
             Add Player
           </button>
         </div>
 
         <div className="space-y-3">
-          <h4 className="font-semibold">Create Team</h4>
-          <input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="Team name" className="w-full px-3 py-2 rounded-lg glass" />
-          <select value={teamCategoryId} onChange={(e) => setTeamCategoryId(e.target.value)} className="w-full px-3 py-2 rounded-lg glass">
-            <option value="">Select doubles category</option>
-            {doublesCategories.map((c) => (
+          <h4 className="font-semibold">Assign Player to Group</h4>
+          <select
+            value={assignCategoryId}
+            onChange={(e) => {
+              setAssignCategoryId(e.target.value);
+              setAssignGroupId("");
+              setAssignPlayerId("");
+            }}
+            className="w-full px-3 py-2 rounded-lg glass"
+          >
+            <option value="">Select category</option>
+            {singlesCategories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <select value={teamPlayer1} onChange={(e) => setTeamPlayer1(e.target.value)} className="w-full px-3 py-2 rounded-lg glass">
-            <option value="">Player 1</option>
-            {activePlayers.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+          <select
+            value={assignGroupId}
+            onChange={(e) => setAssignGroupId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg glass"
+            disabled={!assignCategoryId}
+          >
+            <option value="">Select group</option>
+            {groupsForCategory(assignCategoryId).map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
             ))}
           </select>
-          <select value={teamPlayer2} onChange={(e) => setTeamPlayer2(e.target.value)} className="w-full px-3 py-2 rounded-lg glass">
-            <option value="">Player 2</option>
-            {activePlayers.map((p) => (
+          <select
+            value={assignPlayerId}
+            onChange={(e) => setAssignPlayerId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg glass"
+            disabled={!assignCategoryId}
+          >
+            <option value="">Select player</option>
+            {availableSinglesPlayers(assignCategoryId).map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
           <button
             onClick={() =>
               runAction(
-                () => api.createTeam({ team_name: teamName, player1_id: teamPlayer1, player2_id: teamPlayer2, category_id: teamCategoryId }),
-                "Team created"
+                () => api.assignPlayer(assignGroupId, assignPlayerId),
+                "Player assigned to group",
+                resetAssignForm
               )
             }
-            className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm"
+            disabled={!assignGroupId || !assignPlayerId}
+            className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm disabled:opacity-50"
           >
-            Create Team
+            Save Assignment
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <h4 className="font-semibold">Create Doubles Team</h4>
+          <select
+            value={teamCategoryId}
+            onChange={(e) => {
+              setTeamCategoryId(e.target.value);
+              setTeamGroupId("");
+              setTeamPlayer1("");
+              setTeamPlayer2("");
+            }}
+            className="w-full px-3 py-2 rounded-lg glass"
+          >
+            <option value="">Select category</option>
+            {doublesCategories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <select
+            value={teamGroupId}
+            onChange={(e) => setTeamGroupId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg glass"
+            disabled={!teamCategoryId}
+          >
+            <option value="">Select group</option>
+            {groupsForCategory(teamCategoryId).map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+          <select
+            value={teamPlayer1}
+            onChange={(e) => {
+              setTeamPlayer1(e.target.value);
+              setTeamPlayer2("");
+            }}
+            className="w-full px-3 py-2 rounded-lg glass"
+            disabled={!teamCategoryId}
+          >
+            <option value="">Player 1</option>
+            {availableDoublesPlayers(teamCategoryId).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <select
+            value={teamPlayer2}
+            onChange={(e) => setTeamPlayer2(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg glass"
+            disabled={!teamCategoryId || !teamPlayer1}
+          >
+            <option value="">Player 2</option>
+            {teamPlayer2Options(teamCategoryId, teamPlayer1).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={() =>
+              runAction(
+                () =>
+                  api.createTeam({
+                    player1_id: teamPlayer1,
+                    player2_id: teamPlayer2,
+                    category_id: teamCategoryId,
+                    group_id: teamGroupId,
+                  }),
+                "Team created and assigned to group",
+                resetTeamForm
+              )
+            }
+            disabled={!teamCategoryId || !teamGroupId || !teamPlayer1 || !teamPlayer2}
+            className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm disabled:opacity-50"
+          >
+            Save Team
           </button>
         </div>
 
@@ -838,47 +1035,118 @@ function AdminPanel({
             ))}
           </select>
           <button
-            onClick={() => runAction(() => api.createGroup({ name: groupName, category_id: groupCategoryId }), "Group created")}
+            onClick={() =>
+              runAction(
+                () => api.createGroup({ name: groupName, category_id: groupCategoryId }),
+                "Group created",
+                resetGroupForm
+              )
+            }
             className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm"
           >
             Create Group
           </button>
         </div>
-
-        <div className="space-y-3">
-          <h4 className="font-semibold">Assign to Group</h4>
-          <select value={assignGroupId} onChange={(e) => setAssignGroupId(e.target.value)} className="w-full px-3 py-2 rounded-lg glass">
-            <option value="">Select group</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-          <select value={assignPlayerId} onChange={(e) => setAssignPlayerId(e.target.value)} className="w-full px-3 py-2 rounded-lg glass">
-            <option value="">Assign player (singles)</option>
-            {activePlayers.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <button
-            onClick={() => runAction(() => api.assignPlayer(assignGroupId, assignPlayerId), "Player assigned")}
-            className="px-4 py-2 rounded-lg bg-board-dark text-white text-sm mr-2"
-          >
-            Assign Player
-          </button>
-          <select value={assignTeamId} onChange={(e) => setAssignTeamId(e.target.value)} className="w-full px-3 py-2 rounded-lg glass">
-            <option value="">Assign team (doubles)</option>
-            {teams.filter((t) => t.is_active).map((t) => (
-              <option key={t.id} value={t.id}>{t.team_name}</option>
-            ))}
-          </select>
-          <button
-            onClick={() => runAction(() => api.assignTeam(assignGroupId, assignTeamId), "Team assigned")}
-            className="px-4 py-2 rounded-lg bg-board-dark text-white text-sm"
-          >
-            Assign Team
-          </button>
-        </div>
       </div>
+    </div>
+  );
+}
+
+function MatchAdminControls({
+  match,
+  groupName,
+  categoryName,
+  onSave,
+}: {
+  match: GroupMatch;
+  groupName: string;
+  categoryName: string;
+  onSave: (
+    match: GroupMatch,
+    update: { status?: MatchStatus; winnerParticipantId?: string; winnerScore?: number }
+  ) => Promise<void>;
+}) {
+  const [winnerId, setWinnerId] = useState(match.winnerParticipantId || match.participant1Id);
+  const [winnerScore, setWinnerScore] = useState(String(match.winnerScore ?? ""));
+
+  const resetMatchForm = () => {
+    setWinnerId(match.participant1Id);
+    setWinnerScore("");
+  };
+
+  const handleSave = async (
+    update: { status?: MatchStatus; winnerParticipantId?: string; winnerScore?: number }
+  ) => {
+    try {
+      await onSave(match, update);
+      if (update.status === "Completed") {
+        resetMatchForm();
+      }
+    } catch {
+      // Keep form values when the API call fails.
+    }
+  };
+
+  if (match.status === "Completed") {
+    const winnerName =
+      match.winnerParticipantId === match.participant1Id ? match.playerA : match.playerB;
+    return (
+      <div className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+        <span>Winner: {winnerName}</span>
+        <span>Score: {match.winnerScore ?? "—"}</span>
+        <span className={`px-2 py-0.5 rounded-full text-xs font-bold w-fit bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300`}>
+          Completed
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <select
+        value={match.status}
+        onChange={(e) => {
+          const status = e.target.value as MatchStatus;
+          void handleSave({ status });
+        }}
+        className="px-2 py-0.5 rounded border text-xs"
+      >
+        <option value="Scheduled">Scheduled</option>
+        <option value="Live">Live</option>
+      </select>
+      <select
+            value={winnerId}
+            onChange={(e) => setWinnerId(e.target.value)}
+            className="px-2 py-0.5 rounded border text-xs"
+          >
+            <option value={match.participant1Id}>{match.playerA}</option>
+            <option value={match.participant2Id}>{match.playerB}</option>
+          </select>
+          <input
+            type="number"
+            value={winnerScore}
+            onChange={(e) => setWinnerScore(e.target.value)}
+            className="w-20 px-2 py-0.5 rounded border text-xs"
+            placeholder="Score"
+            min={0}
+          />
+          <button
+            onClick={() => {
+              const score = Number(winnerScore);
+              if (!winnerId || Number.isNaN(score)) return;
+              void handleSave({
+                status: "Completed",
+                winnerParticipantId: winnerId,
+                winnerScore: score,
+              });
+            }}
+            className="text-xs text-accent-teal hover:underline text-left"
+          >
+            Complete match
+          </button>
+      <span className="text-xs text-slate-500">
+        {groupName} · {categoryName}
+      </span>
     </div>
   );
 }
@@ -944,14 +1212,19 @@ function CategoryTournamentSection({
     Completed: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300",
   };
 
-  const liveMatch = useMemo(() => {
-    if (!categoryData) return null;
-    for (const g of categoryData.groups) {
-      const m = g.matches.find((x) => x.status === "Live");
-      if (m) return { match: m, group: g.name };
+  const liveMatches = useMemo(() => {
+    const results: { match: GroupMatch; group: string; category: string }[] = [];
+    for (const cat of data) {
+      for (const group of cat.groups) {
+        for (const match of group.matches) {
+          if (match.status === "Live") {
+            results.push({ match, group: group.name, category: cat.category });
+          }
+        }
+      }
     }
-    return null;
-  }, [categoryData]);
+    return results;
+  }, [data]);
 
   const filteredGroups = useMemo(() => {
     if (!categoryData) return [];
@@ -970,8 +1243,6 @@ function CategoryTournamentSection({
       .filter(Boolean) as TournamentGroup[];
   }, [categoryData, search]);
 
-  const totalMatches = categoryData?.groups.reduce((n, g) => n + g.matches.length, 0) ?? 0;
-
   const saveMatch = async (
     match: GroupMatch,
     update: { status?: MatchStatus; winnerParticipantId?: string; winnerScore?: number }
@@ -982,47 +1253,60 @@ function CategoryTournamentSection({
   return (
     <section id="standings" className="py-20 bg-slate-50/50 dark:bg-slate-900/30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <SectionHeader
-          title="Tournament Standings"
-          subtitle="Category → Groups → Points & round-robin schedule (every player plays everyone in their group)"
-          icon={Trophy}
-        />
+        <SectionHeader title="Tournament Standings" subtitle="Category → Groups → Standings & matches" icon={Trophy} />
 
         <CategoryTabs categories={categories} active={activeCategory} onChange={setActiveCategory} />
 
-        <div className="flex flex-wrap justify-center gap-4 mb-8 text-sm text-slate-500">
-          <span className="glass px-3 py-1.5 rounded-lg">
-            {categoryData?.groups.length ?? 0} groups in {activeCategory}
-          </span>
-          <span className="glass px-3 py-1.5 rounded-lg">{totalMatches} round-robin matches</span>
-          <span className="glass px-3 py-1.5 rounded-lg">Points tracked separately per group</span>
-        </div>
+        {categoryData && categoryData.groups.length > 0 && (
+          <div className="mb-8 glass rounded-xl p-4 max-w-md mx-auto">
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">{activeCategory}</p>
+            <ul className="space-y-1">
+              {categoryData.groups.map((group) => (
+                <li key={group.id} className="text-sm text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                  <Circle className="w-2 h-2 fill-accent-teal text-accent-teal" />
+                  {group.name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-        {liveMatch && (
+        {liveMatches.length > 0 && (
           <motion.div
-            id="live-match"
+            id="live-matches"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             className="mb-8 p-6 rounded-2xl border-2 border-red-500/50 bg-red-500/10 dark:bg-red-500/20 relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 px-4 py-1 bg-red-500 text-white text-xs font-bold rounded-bl-xl flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-              LIVE — {activeCategory}
+              LIVE
             </div>
-            <h3 className="font-display text-lg font-bold mb-1">
-              {liveMatch.group} · Table {liveMatch.match.table}
-            </h3>
-            <p className="text-2xl font-bold">
-              {liveMatch.match.playerA} <span className="text-red-500 mx-2">vs</span> {liveMatch.match.playerB}
-            </p>
-            <p className="text-sm text-slate-500 mt-2">{liveMatch.match.time}</p>
+            <h3 className="font-display text-lg font-bold mb-4">Live Matches</h3>
+            <ul className="space-y-3">
+              {liveMatches.map(({ match, group, category }) => (
+                <li
+                  key={match.id}
+                  className="p-4 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-red-500/20"
+                >
+                  <p className="text-xl font-bold">
+                    {match.playerA} <span className="text-red-500 mx-2">vs</span> {match.playerB}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {group} · {category}
+                  </p>
+                  <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-bold ${statusColors.Live}`}>
+                    Live
+                  </span>
+                </li>
+              ))}
+            </ul>
           </motion.div>
         )}
 
         <div className="space-y-10">
           {filteredGroups.map((group) => {
             const sorted = sortStandings(group.standings);
-            const completed = group.matches.filter((m) => m.status === "Completed").length;
 
             return (
               <motion.div
@@ -1037,13 +1321,6 @@ function CategoryTournamentSection({
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wider text-accent-teal">{activeCategory}</p>
                         <h3 className="font-display text-2xl font-bold">{group.name}</h3>
-                      </div>
-                      <div className="flex flex-wrap gap-2 text-xs">
-                        <span className="glass px-3 py-1 rounded-full">{group.standings.length} players</span>
-                        <span className="glass px-3 py-1 rounded-full">
-                          {completed}/{group.matches.length} matches done
-                        </span>
-                        <span className="glass px-3 py-1 rounded-full">Round-robin</span>
                       </div>
                     </div>
                   </div>
@@ -1070,7 +1347,7 @@ function CategoryTournamentSection({
                       {/* Points table — per group only */}
                       <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
                         <Trophy className="w-5 h-5 text-accent-gold" />
-                        Group points (not combined)
+                        Standings
                       </h4>
                       <div className="overflow-x-auto rounded-xl glass">
                         <table className="w-full text-left text-sm">
@@ -1078,10 +1355,11 @@ function CategoryTournamentSection({
                             <tr className="border-b border-slate-200 dark:border-slate-700">
                               <th className="px-3 py-3 font-semibold">#</th>
                               <th className="px-3 py-3 font-semibold">Player</th>
-                              <th className="px-3 py-3 text-center font-semibold">MP</th>
+                              <th className="px-3 py-3 text-center font-semibold">Played</th>
                               <th className="px-3 py-3 text-center font-semibold">W</th>
                               <th className="px-3 py-3 text-center font-semibold">L</th>
-                              <th className="px-3 py-3 text-center font-semibold">Pts</th>
+                              <th className="px-3 py-3 text-center font-semibold">Points</th>
+                              <th className="px-3 py-3 text-center font-semibold">Score</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1094,13 +1372,13 @@ function CategoryTournamentSection({
                                   <RankBadge rank={idx + 1} />
                                 </td>
                                 <td className="px-3 py-3 font-medium">{entry.name}</td>
-                                {(["matchesPlayed", "wins", "losses", "points"] as const).map((field) => (
-                                  <td key={field} className="px-3 py-3 text-center">
-                                    <span className={field === "points" ? "font-bold text-accent-teal" : ""}>
-                                      {entry[field]}
-                                    </span>
-                                  </td>
-                                ))}
+                                <td className="px-3 py-3 text-center">{entry.matchesPlayed}</td>
+                                <td className="px-3 py-3 text-center">{entry.wins}</td>
+                                <td className="px-3 py-3 text-center">{entry.losses}</td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className="font-bold text-accent-teal">{entry.points}</span>
+                                </td>
+                                <td className="px-3 py-3 text-center">{entry.score}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1108,11 +1386,11 @@ function CategoryTournamentSection({
                       </div>
                     </div>
 
-                    {/* Round-robin schedule */}
+                    {/* Matches */}
                     <div>
                       <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
                         <Calendar className="w-5 h-5 text-accent-teal" />
-                        Group schedule (everyone vs everyone)
+                        Matches
                       </h4>
                       <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                         {group.matches.map((match, mi) => (
@@ -1122,84 +1400,21 @@ function CategoryTournamentSection({
                               match.status === "Live" ? "ring-2 ring-red-500/40" : ""
                             }`}
                           >
-                            <span className="text-xs font-mono text-slate-400 w-16">#{mi + 1}</span>
-                            <div className="flex items-center gap-2 min-w-[72px]">
-                              <Clock className="w-4 h-4 text-accent-teal shrink-0" />
-                              <span className="font-medium">{match.time}</span>
-                            </div>
+                            <span className="text-xs font-mono text-slate-400 w-16">Match {mi + 1}</span>
                             <div className="flex-1 font-medium">
                               {match.playerA} <span className="text-accent-teal">vs</span> {match.playerB}
-                              {match.status === "Completed" && match.winnerScore != null && (
-                                <span className="block text-xs text-slate-500 mt-1">
-                                  Winner score: {match.winnerScore}
-                                </span>
-                              )}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {group.name} · {activeCategory}
                             </div>
                             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                              <span className="text-slate-500 text-xs">T{match.table}</span>
                               {adminMode ? (
-                                <div className="flex flex-col gap-2">
-                                  <select
-                                    value={match.status}
-                                    onChange={(e) => {
-                                      const status = e.target.value as MatchStatus;
-                                      if (status === "Completed") return;
-                                      void saveMatch(match, { status });
-                                    }}
-                                    className="px-2 py-0.5 rounded border text-xs"
-                                  >
-                                    <option value="Scheduled">Scheduled</option>
-                                    <option value="Live">Live</option>
-                                    <option value="Completed">Completed</option>
-                                  </select>
-                                  {match.status === "Completed" && (
-                                    <>
-                                      <select
-                                        defaultValue={match.winnerParticipantId || match.participant1Id}
-                                        onChange={(e) => {
-                                          const winnerParticipantId = e.target.value;
-                                          const winnerScore = match.winnerScore ?? 25;
-                                          void saveMatch(match, { status: "Completed", winnerParticipantId, winnerScore });
-                                        }}
-                                        className="px-2 py-0.5 rounded border text-xs"
-                                      >
-                                        <option value={match.participant1Id}>{match.playerA}</option>
-                                        <option value={match.participant2Id}>{match.playerB}</option>
-                                      </select>
-                                      <input
-                                        type="number"
-                                        defaultValue={match.winnerScore ?? 25}
-                                        onBlur={(e) => {
-                                          const winnerScore = Number(e.target.value);
-                                          const winnerParticipantId =
-                                            match.winnerParticipantId || match.participant1Id;
-                                          void saveMatch(match, {
-                                            status: "Completed",
-                                            winnerParticipantId,
-                                            winnerScore,
-                                          });
-                                        }}
-                                        className="w-16 px-2 py-0.5 rounded border text-xs"
-                                        placeholder="Score"
-                                      />
-                                    </>
-                                  )}
-                                  {match.status !== "Completed" && (
-                                    <button
-                                      onClick={() => {
-                                        const winnerParticipantId = match.participant1Id;
-                                        void saveMatch(match, {
-                                          status: "Completed",
-                                          winnerParticipantId,
-                                          winnerScore: 25,
-                                        });
-                                      }}
-                                      className="text-xs text-accent-teal hover:underline text-left"
-                                    >
-                                      Mark completed
-                                    </button>
-                                  )}
-                                </div>
+                                <MatchAdminControls
+                                  match={match}
+                                  groupName={group.name}
+                                  categoryName={activeCategory}
+                                  onSave={saveMatch}
+                                />
                               ) : (
                                 <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[match.status]}`}>
                                   {match.status}
@@ -1231,7 +1446,7 @@ function TournamentInfo() {
   const items = [
     { icon: MapPin, label: "Venue", value: "Thoughtworks Hyderabad Office" },
     { icon: Calendar, label: "Starts", value: "June 2nd Week, 2026" },
-    { icon: Users, label: "Format", value: "Round-robin groups per category — points tracked per group" },
+    { icon: Users, label: "Format", value: "Group stage tournament across categories" },
     { icon: Gamepad2, label: "Spirit", value: "Friendly office tournament with local rules" },
   ];
 
@@ -1359,7 +1574,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [rulesModalOpen, setRulesModalOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState<Category>("Singles (Men)");
+  const [activeCategory, setActiveCategory] = useState<Category>("Men's Singles");
   const [tournament, setTournament] = useState<CategoryData[]>([]);
   const [apiCategories, setApiCategories] = useState<ApiCategory[]>([]);
   const [players, setPlayers] = useState<ApiPlayer[]>([]);
@@ -1458,7 +1673,7 @@ export default function App() {
 
       <Hero countdown={countdown} onViewStandings={() => goToStandings()} />
       <StatsBar categoryCount={categoryLabels.length} playerCount={players.length} matchCount={matchCount} />
-      <Categories categories={categoryLabels} onSelectCategory={goToStandings} />
+      <Categories tournament={tournament} onSelectCategory={goToStandings} />
       <RulesSection onOpenModal={() => setRulesModalOpen(true)} />
       <Scoring />
 
@@ -1475,6 +1690,7 @@ export default function App() {
             categories={apiCategories}
             players={players}
             teams={teams}
+            tournament={tournament}
             onRefresh={loadTournament}
           />
         )}

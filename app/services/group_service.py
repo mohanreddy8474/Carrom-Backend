@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.category import Category
-from app.models.enums import CategoryFormat, ParticipantType
+from app.models.enums import CategoryFormat, Gender, ParticipantType
 from app.models.group import Group
 from app.models.group_player import GroupPlayer
 from app.models.group_team import GroupTeam
@@ -41,6 +41,12 @@ def add_player(
             detail="Players can only be assigned to singles category groups",
         )
 
+    if category.gender not in (Gender.MALE, Gender.FEMALE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid category for singles player assignment",
+        )
+
     player = db.query(Player).filter(Player.id == data.player_id).first()
     if not player:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
@@ -61,6 +67,23 @@ def add_player(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Player already in this group",
+        )
+
+    category_group_ids = [
+        g.id for g in db.query(Group).filter(Group.category_id == category.id).all()
+    ]
+    existing_in_category = (
+        db.query(GroupPlayer)
+        .filter(
+            GroupPlayer.player_id == data.player_id,
+            GroupPlayer.group_id.in_(category_group_ids),
+        )
+        .first()
+    )
+    if existing_in_category:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Player already assigned to a group in this category",
         )
 
     other_ids = [

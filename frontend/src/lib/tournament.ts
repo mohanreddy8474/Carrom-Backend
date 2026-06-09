@@ -1,5 +1,5 @@
 // Integration: maps FastAPI responses into the UI shapes used by App.tsx
-import { api, ApiCategory, ApiMatch, ApiPlayer, ApiTeam, Gender, CategoryFormat, MatchStatus as ApiMatchStatus } from "./api";
+import { api, ApiCategory, ApiMatch, ApiPlayer, ApiTeam, MatchStatus as ApiMatchStatus } from "./api";
 
 export type UiMatchStatus = "Scheduled" | "Live" | "Completed";
 
@@ -10,6 +10,7 @@ export interface PlayerStanding {
   wins: number;
   losses: number;
   points: number;
+  score: number;
 }
 
 export interface GroupMatch {
@@ -20,10 +21,7 @@ export interface GroupMatch {
   participant2Id: string;
   winnerParticipantId: string | null;
   winnerScore: number | null;
-  time: string;
-  table: number;
   status: UiMatchStatus;
-  round: number;
 }
 
 export interface TournamentGroup {
@@ -39,12 +37,8 @@ export interface CategoryData {
   groups: TournamentGroup[];
 }
 
-export function categoryLabel(gender: Gender, format: CategoryFormat): string {
-  if (format === "SINGLES" && gender === "MALE") return "Singles (Men)";
-  if (format === "SINGLES" && gender === "FEMALE") return "Singles (Women)";
-  if (format === "DOUBLES" && gender === "MALE") return "Doubles (Men)";
-  if (format === "DOUBLES" && gender === "FEMALE") return "Doubles (Women)";
-  return "Unknown";
+export function categoryDisplayName(category: ApiCategory): string {
+  return category.name;
 }
 
 export function toUiStatus(status: ApiMatchStatus): UiMatchStatus {
@@ -59,7 +53,7 @@ export function toApiStatus(status: UiMatchStatus): ApiMatchStatus {
   return "SCHEDULED";
 }
 
-function mapMatch(match: ApiMatch, index: number): GroupMatch {
+function mapMatch(match: ApiMatch): GroupMatch {
   return {
     id: match.id,
     playerA: match.participant1_name || "TBD",
@@ -68,10 +62,7 @@ function mapMatch(match: ApiMatch, index: number): GroupMatch {
     participant2Id: match.participant2_id,
     winnerParticipantId: match.winner_participant_id,
     winnerScore: match.winner_score,
-    time: new Date(match.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    table: (index % 3) + 1,
     status: toUiStatus(match.status),
-    round: 1,
   };
 }
 
@@ -109,13 +100,14 @@ export async function fetchTournamentData(): Promise<{
           wins: s.wins,
           losses: s.losses,
           points: s.tournament_points,
+          score: s.score,
         })),
         matches: matches.map(mapMatch),
       });
     }
 
     tournament.push({
-      category: categoryLabel(category.gender, category.format),
+      category: categoryDisplayName(category),
       categoryId: category.id,
       groups: groupData,
     });

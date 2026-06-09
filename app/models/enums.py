@@ -4,6 +4,7 @@ import enum
 class Gender(str, enum.Enum):
     MALE = "MALE"
     FEMALE = "FEMALE"
+    MIXED = "MIXED"
 
 
 class CategoryFormat(str, enum.Enum):

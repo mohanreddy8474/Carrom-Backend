@@ -38,6 +38,7 @@ def calculate_standings(db: Session, group_id: uuid.UUID) -> list[StandingEntry]
                 "wins": 0,
                 "losses": 0,
                 "tournament_points": 0,
+                "score": 0,
             }
     else:
         assignments = db.query(GroupTeam).filter(GroupTeam.group_id == group_id).all()
@@ -48,6 +49,7 @@ def calculate_standings(db: Session, group_id: uuid.UUID) -> list[StandingEntry]
                 "wins": 0,
                 "losses": 0,
                 "tournament_points": 0,
+                "score": 0,
             }
 
     completed = (
@@ -73,6 +75,7 @@ def calculate_standings(db: Session, group_id: uuid.UUID) -> list[StandingEntry]
         if winner in stats:
             stats[winner]["wins"] += 1
             stats[winner]["tournament_points"] += WIN_POINTS
+            stats[winner]["score"] += match.winner_score or 0
 
         if loser in stats:
             stats[loser]["losses"] += 1
@@ -89,6 +92,7 @@ def calculate_standings(db: Session, group_id: uuid.UUID) -> list[StandingEntry]
             wins=data["wins"],
             losses=data["losses"],
             tournament_points=data["tournament_points"],
+            score=data["score"],
         )
         for pid, data in stats.items()
     ]

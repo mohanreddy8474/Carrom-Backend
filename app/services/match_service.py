@@ -18,6 +18,13 @@ def get_match(db: Session, match_id: uuid.UUID) -> Match:
 def update_match(db: Session, match_id: uuid.UUID, data: MatchUpdate) -> Match:
     match = get_match(db, match_id)
 
+    if match.status == MatchStatus.COMPLETED:
+        if data.winner_participant_id is not None or data.winner_score is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Winner information cannot be modified for completed matches",
+            )
+
     new_status = data.status if data.status is not None else match.status
 
     if data.winner_participant_id is not None or data.winner_score is not None:

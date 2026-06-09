@@ -13,3 +13,4 @@ class StandingEntry(BaseModel):
     wins: int
     losses: int
     tournament_points: int
+    score: int

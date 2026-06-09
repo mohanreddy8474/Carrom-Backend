@@ -4,6 +4,7 @@ import { getAdminKey } from "./auth";
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export type Gender = "MALE" | "FEMALE";
+export type CategoryGender = Gender | "MIXED";
 export type CategoryFormat = "SINGLES" | "DOUBLES";
 export type MatchStatus = "SCHEDULED" | "LIVE" | "COMPLETED";
 export type ParticipantType = "PLAYER" | "TEAM";
@@ -11,7 +12,7 @@ export type ParticipantType = "PLAYER" | "TEAM";
 export interface ApiCategory {
   id: string;
   name: string;
-  gender: Gender;
+  gender: CategoryGender;
   format: CategoryFormat;
 }
 
@@ -46,6 +47,7 @@ export interface ApiStanding {
   wins: number;
   losses: number;
   tournament_points: number;
+  score: number;
 }
 
 export interface ApiMatch {
@@ -101,10 +103,10 @@ export const api = {
     request<ApiPlayer>("/players", { method: "POST", body: JSON.stringify(data) }),
 
   createTeam: (data: {
-    team_name: string;
     player1_id: string;
     player2_id: string;
     category_id: string;
+    group_id: string;
   }) => request<ApiTeam>("/teams", { method: "POST", body: JSON.stringify(data) }),
 
   createGroup: (data: { name: string; category_id: string }) =>

@@ -71,6 +71,9 @@ def seed(db: Session) -> dict[str, int]:
         "wd": Category(
             name="Women's Doubles", gender=Gender.FEMALE, format=CategoryFormat.DOUBLES
         ),
+        "xd": Category(
+            name="Mixed Doubles", gender=Gender.MIXED, format=CategoryFormat.DOUBLES
+        ),
     }
     db.add_all(categories.values())
     db.flush()
@@ -102,27 +105,30 @@ def seed(db: Session) -> dict[str, int]:
         "ws_b": Group(category_id=categories["ws"].id, name="Group B"),
         "md_a": Group(category_id=categories["md"].id, name="Group A"),
         "wd_a": Group(category_id=categories["wd"].id, name="Group A"),
+        "xd_a": Group(category_id=categories["xd"].id, name="Group A"),
     }
     db.add_all(groups.values())
     db.flush()
 
     teams_data = [
-        ("Team Alpha", "Mohan", "Rahul", "md"),
-        ("Team Beta", "Ajay", "Kiran", "md"),
-        ("Team Gamma", "Vikram", "Arjun", "md"),
-        ("Team Spark", "Priya", "Ananya", "wd"),
-        ("Team Blaze", "Neha", "Divya", "wd"),
+        ("Mohan", "Rahul", "md"),
+        ("Ajay", "Kiran", "md"),
+        ("Vikram", "Arjun", "md"),
+        ("Priya", "Ananya", "wd"),
+        ("Neha", "Divya", "wd"),
+        ("Mohan", "Priya", "xd"),
+        ("Rahul", "Ananya", "xd"),
     ]
     teams: dict[str, Team] = {}
-    for team_name, p1, p2, cat_key in teams_data:
+    for p1, p2, cat_key in teams_data:
         team = Team(
-            team_name=team_name,
+            team_name=f"{p1} / {p2}",
             player1_id=players[p1].id,
             player2_id=players[p2].id,
             category_id=categories[cat_key].id,
         )
         db.add(team)
-        teams[team_name] = team
+        teams[f"{p1}/{p2}"] = team
     db.flush()
 
     for group, names in [
@@ -134,12 +140,13 @@ def seed(db: Session) -> dict[str, int]:
         for position, name in enumerate(names, start=1):
             _add_player(db, group, players[name].id, position)
 
-    for group, team_names in [
-        (groups["md_a"], ["Team Alpha", "Team Beta", "Team Gamma"]),
-        (groups["wd_a"], ["Team Spark", "Team Blaze"]),
+    for group, team_keys in [
+        (groups["md_a"], ["Mohan/Rahul", "Ajay/Kiran", "Vikram/Arjun"]),
+        (groups["wd_a"], ["Priya/Ananya", "Neha/Divya"]),
+        (groups["xd_a"], ["Mohan/Priya", "Rahul/Ananya"]),
     ]:
-        for position, team_name in enumerate(team_names, start=1):
-            _add_team(db, group, teams[team_name].id, position)
+        for position, team_key in enumerate(team_keys, start=1):
+            _add_team(db, group, teams[team_key].id, position)
 
     db.flush()
 
@@ -170,7 +177,7 @@ def seed(db: Session) -> dict[str, int]:
         .all()
     )
     if md_a_matches:
-        _complete_match(db, md_a_matches[0], teams["Team Alpha"].id, 31)
+        _complete_match(db, md_a_matches[0], teams["Mohan/Rahul"].id, 31)
 
     db.commit()
 

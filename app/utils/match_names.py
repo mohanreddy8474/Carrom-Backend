@@ -16,7 +16,13 @@ def resolve_participant_name(
         player = db.query(Player).filter(Player.id == participant_id).first()
         return player.name if player else "Unknown Player"
     team = db.query(Team).filter(Team.id == participant_id).first()
-    return team.team_name if team else "Unknown Team"
+    if not team:
+        return "Unknown Team"
+    p1 = db.query(Player).filter(Player.id == team.player1_id).first()
+    p2 = db.query(Player).filter(Player.id == team.player2_id).first()
+    if p1 and p2:
+        return f"{p1.name} / {p2.name}"
+    return team.team_name
 
 
 def enrich_match(db: Session, match: Match) -> MatchResponse:
