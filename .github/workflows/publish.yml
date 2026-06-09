@@ -18,6 +18,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: change directory
+        run: cd frontend
+
       # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -27,17 +30,17 @@ jobs:
 
       # 3. Install dependencies
       - name: Install dependencies
-        run: npm ci --prefix frontend
+        run: npm ci
 
       # 4. Build the project
       - name: Build
-        run: npm run build --prefix frontend
+        run: npm run build
 
       # 5. Upload build output for deployment
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: frontend/dist
+          path: dist
 
   deploy:
     environment:

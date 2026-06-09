@@ -178,15 +178,15 @@ function FloatingCoin({
   className?: string;
   delay?: number;
 }) {
-  const bg =
+  const styles =
     color === "white"
-      ? "bg-coin-white shadow-inner"
+      ? "bg-stone-200 dark:bg-slate-100 border-slate-400/80 shadow-inner"
       : color === "black"
-        ? "bg-coin-black"
-        : "bg-coin-red";
+        ? "bg-slate-900 border-slate-800/90 shadow-inner"
+        : "bg-rose-600 border-rose-400 shadow-inner";
   return (
     <motion.div
-      className={`absolute w-8 h-8 md:w-10 md:h-10 rounded-full ${bg} border-2 border-white/20 shadow-lg ${className}`}
+      className={`absolute w-8 h-8 md:w-10 md:h-10 rounded-full ${styles} border-2 shadow-lg ${className}`}
       animate={{ y: [0, -18, 0], rotate: [0, 8, 0] }}
       transition={{
         duration: 5 + delay,
@@ -201,14 +201,18 @@ function FloatingCoin({
 function FloatingStriker({ className }: { className?: string }) {
   return (
     <motion.div
-      className={`absolute w-12 h-12 md:w-14 md:h-14 rounded-full bg-striker border-4 border-striker-ring shadow-xl overflow-hidden ${className}`}
-      animate={{ y: [0, -24, 0], x: [0, 6, 0] }}
-      transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+      className={`absolute w-20 h-20 md:w-16 md:h-16 rounded-full bg-striker border-4 border-striker-ring shadow-2xl overflow-hidden ${className}`}
+      animate={{
+        x: [0, 12, -10, 0],
+        y: [0, -6, -3, 0],
+        rotate: [0, 20, -20, 0],
+      }}
+      transition={{ duration: 2.0, repeat: Infinity, ease: "easeInOut" }}
     >
       <img
         src="/tw.jpg"
         alt="Thoughtworks logo"
-        className="absolute inset-0 w-full h-full object-cover rounded-full opacity-90"
+        className="absolute inset-0 w-full h-full object-cover rounded-full opacity-95"
       />
     </motion.div>
   );
@@ -431,18 +435,38 @@ function Hero({
     >
       <div className="absolute inset-0 bg-gradient-to-b from-board-light/20 via-transparent to-transparent dark:from-board-dark/30 pointer-events-none" />
 
-      <FloatingCoin color="white" className="top-32 left-[8%] opacity-60" />
+      <FloatingCoin color="white" className="top-24 left-[12%] opacity-90" />
       <FloatingCoin
         color="black"
-        className="top-48 right-[12%] opacity-50"
-        delay={1}
+        className="top-28 left-[22%] opacity-90"
+        delay={0.6}
+      />
+      <FloatingCoin
+        color="white"
+        className="top-[34%] right-[18%] opacity-90"
+        delay={1.2}
+      />
+      <FloatingCoin
+        color="black"
+        className="bottom-[28%] left-[26%] opacity-90"
+        delay={1.8}
+      />
+      <FloatingCoin
+        color="black"
+        className="bottom-[18%] left-[16%] opacity-90"
+        delay={2.1}
+      />
+      <FloatingCoin
+        color="white"
+        className="bottom-[24%] right-[28%] opacity-90"
+        delay={2.4}
       />
       <FloatingCoin
         color="red"
-        className="bottom-40 left-[15%] opacity-70"
-        delay={2}
+        className="bottom-[18%] right-[16%] opacity-90"
+        delay={3}
       />
-      <FloatingStriker className="top-40 right-[20%] opacity-40" />
+      <FloatingStriker className="top-[24%] left-[28%] opacity-100" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
         <motion.div
