@@ -201,10 +201,16 @@ function FloatingCoin({
 function FloatingStriker({ className }: { className?: string }) {
   return (
     <motion.div
-      className={`absolute w-12 h-12 md:w-14 md:h-14 rounded-full bg-striker border-4 border-striker-ring shadow-xl ${className}`}
+      className={`absolute w-12 h-12 md:w-14 md:h-14 rounded-full bg-striker border-4 border-striker-ring shadow-xl overflow-hidden ${className}`}
       animate={{ y: [0, -24, 0], x: [0, 6, 0] }}
       transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-    />
+    >
+      <img
+        src="/tw.jpg"
+        alt="Thoughtworks logo"
+        className="absolute inset-0 w-full h-full object-cover rounded-full opacity-90"
+      />
+    </motion.div>
   );
 }
 
@@ -322,11 +328,13 @@ function Navbar({
         <div className="flex items-center justify-between">
           <button
             onClick={() => scrollTo("hero")}
-            className="flex items-center gap-2 font-display font-bold text-lg text-slate-900 dark:text-white"
+            className="flex items-center gap-3 font-display font-bold text-lg text-slate-900 dark:text-white"
           >
-            <div className="w-9 h-9 rounded-lg bg-board flex items-center justify-center">
-              <Target className="w-5 h-5 text-coin-white" />
-            </div>
+            <img
+              src="/tw.jpg"
+              alt="Thoughtworks"
+              className="w-10 h-10 rounded-lg bg-white/90 p-1 shadow-sm object-contain"
+            />
             <span className="hidden sm:inline">TW Carrom</span>
           </button>
 
@@ -503,7 +511,7 @@ function Hero({
                       <div className="text-2xl md:text-3xl font-display font-bold text-accent-teal">
                         {String(countdown[unit]).padStart(2, "0")}
                       </div>
-                      <div className="text-xs uppercase tracking-wider text-slate-500 capitalize">
+                      <div className="text-xs tracking-wider text-slate-500 capitalize">
                         {unit}
                       </div>
                     </div>
@@ -637,7 +645,7 @@ function Categories({
 
 // ─── Rules ─────────────────────────────────────────────────────────────────────
 
-function RulesSection({ onOpenModal }: { onOpenModal: () => void }) {
+function RulesSection() {
   return (
     <section id="rules" className="py-20 bg-slate-50/50 dark:bg-slate-900/30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -682,53 +690,6 @@ function RulesSection({ onOpenModal }: { onOpenModal: () => void }) {
         </div>
       </div>
     </section>
-  );
-}
-
-function RulesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={onClose}
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            onClick={(e) => e.stopPropagation()}
-            className="glass-strong rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-8"
-          >
-            <div className="flex justify-between items-start mb-6">
-              <h3 className="font-display text-2xl font-bold">
-                Complete Tournament Rules
-              </h3>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <ol className="space-y-4">
-              {RULES.map((rule, i) => (
-                <li
-                  key={i}
-                  className="flex gap-3 text-slate-700 dark:text-slate-300"
-                >
-                  <span className="font-bold text-accent-teal">{i + 1}.</span>
-                  {rule}
-                </li>
-              ))}
-            </ol>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
   );
 }
 
@@ -1849,13 +1810,20 @@ function Footer() {
     <footer className="py-12 border-t border-slate-200 dark:border-slate-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="text-center md:text-left">
-            <p className="font-display font-bold text-lg text-slate-900 dark:text-white">
-              Designed for Thoughtworks Hyderabad Office
-            </p>
-            <p className="text-sm text-slate-500 mt-1">
-              Carrom Tournament 2026 · Internal Event
-            </p>
+          <div className="flex items-center gap-4 text-center md:text-left">
+            <img
+              src="/thoughtworks_flamingo_wave.png"
+              alt="Thoughtworks"
+              className="w-12 h-12 rounded-lg bg-white/90 p-1 shadow-sm object-contain"
+            />
+            <div>
+              <p className="font-display font-bold text-lg text-slate-900 dark:text-white">
+                Designed for Thoughtworks Hyderabad Office
+              </p>
+              <p className="text-sm text-slate-500 mt-1">
+                Carrom Tournament 2026 · Internal Event
+              </p>
+            </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-6 text-sm text-slate-600 dark:text-slate-400">
             <span className="inline-flex items-center gap-2">
