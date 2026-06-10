@@ -37,7 +37,14 @@ import {
   galleryImageUrl,
   Gender,
 } from "./lib/api";
-import { clearAdminKey, isAdmin, setAdminKey } from "./lib/auth";
+import {
+  isAdmin,
+  setAdminKey,
+  signInAdmin,
+  signOutAdmin,
+  usesSupabaseAuth,
+} from "./lib/auth";
+import { supabase } from "./lib/supabase";
 import {
   CategoryData,
   GroupMatch,
@@ -1390,7 +1397,7 @@ function AdminBanner({
       className="fixed top-[7rem] left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full bg-accent-teal text-white text-sm font-medium shadow-lg flex items-center gap-3"
     >
       <Edit3 className="w-4 h-4" />
-      Admin Mode — changes sync to server
+      Admin Mode — changes sync to database
       <button onClick={onLogout} className="underline text-xs opacity-90">
         Logout
       </button>
@@ -1407,6 +1414,8 @@ function AdminLoginModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const supabaseAuth = usesSupabaseAuth();
+  const [email, setEmail] = useState("");
   const [secret, setSecret] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1415,17 +1424,32 @@ function AdminLoginModal({
     setLoading(true);
     setError("");
     try {
-      await api.verifyAdmin(secret);
-      setAdminKey(secret);
+      if (supabaseAuth) {
+        await signInAdmin(email.trim(), secret);
+      } else {
+        await api.verifyAdmin(secret);
+        setAdminKey(secret);
+      }
       onSuccess();
       onClose();
       setSecret("");
-    } catch {
-      setError("Invalid admin secret");
+      setEmail("");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : supabaseAuth
+            ? "Invalid email or password"
+            : "Invalid admin secret",
+      );
     } finally {
       setLoading(false);
     }
   };
+
+  const canSubmit = supabaseAuth
+    ? Boolean(email.trim() && secret)
+    : Boolean(secret);
 
   return (
     <AnimatePresence>
@@ -1457,23 +1481,36 @@ function AdminLoginModal({
               </button>
             </div>
             <p className="text-sm text-slate-500 mb-4">
-              Enter the organizer secret key to manage the tournament.
+              {supabaseAuth
+                ? "Sign in with your organizer account to manage the tournament."
+                : "Enter the organizer secret key to manage the tournament."}
             </p>
+            {supabaseAuth && (
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Admin email"
+                autoComplete="username"
+                className="w-full px-4 py-3 rounded-xl glass mb-3"
+              />
+            )}
             <input
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder="Admin secret"
+              placeholder={supabaseAuth ? "Password" : "Admin secret"}
+              autoComplete={supabaseAuth ? "current-password" : "off"}
               className="w-full px-4 py-3 rounded-xl glass mb-3"
-              onKeyDown={(e) => e.key === "Enter" && submit()}
+              onKeyDown={(e) => e.key === "Enter" && canSubmit && submit()}
             />
             {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
             <button
               onClick={submit}
-              disabled={loading || !secret}
+              disabled={loading || !canSubmit}
               className="w-full py-3 rounded-xl bg-accent-teal text-white font-semibold disabled:opacity-50"
             >
-              {loading ? "Verifying..." : "Login"}
+              {loading ? "Signing in..." : "Login"}
             </button>
           </motion.div>
         </motion.div>
@@ -2616,7 +2653,7 @@ export default function App() {
       window.matchMedia("(prefers-color-scheme: dark)").matches
     );
   });
-  const [adminMode, setAdminMode] = useState(() => isAdmin());
+  const [adminMode, setAdminMode] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
@@ -2630,6 +2667,30 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const countdown = useCountdown(TOURNAMENT_START);
+
+  useEffect(() => {
+    let cancelled = false;
+    isAdmin().then((ok) => {
+      if (!cancelled && ok) setAdminMode(true);
+    });
+
+    if (supabase) {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async () => {
+        const ok = await isAdmin();
+        setAdminMode(ok);
+      });
+      return () => {
+        cancelled = true;
+        subscription.unsubscribe();
+      };
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadTournament = useCallback(async () => {
     setLoading(true);
@@ -2696,13 +2757,13 @@ export default function App() {
     scrollTo("standings");
   };
 
-  const handleAdminToggle = () => {
+  const handleAdminToggle = async () => {
     if (adminMode) {
+      await signOutAdmin();
       setAdminMode(false);
-      clearAdminKey();
       return;
     }
-    if (isAdmin()) {
+    if (await isAdmin()) {
       setAdminMode(true);
     } else {
       setLoginOpen(true);
@@ -2737,8 +2798,8 @@ export default function App() {
       />
       <AdminBanner
         adminMode={adminMode}
-        onLogout={() => {
-          clearAdminKey();
+        onLogout={async () => {
+          await signOutAdmin();
           setAdminMode(false);
         }}
       />
