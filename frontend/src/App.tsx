@@ -61,6 +61,7 @@ const DISPLAY_CATEGORIES = [
   "Mixed Doubles",
 ] as const;
 
+
 const RULES_CATEGORIES = [
   {
     title: "General Rules",
