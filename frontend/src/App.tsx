@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Award,
   AlertCircle,
@@ -13,12 +13,12 @@ import {
   Info,
   LayoutGrid,
   Lock,
-  Mail,
+  ImagePlus,
   MapPin,
   Menu,
   Moon,
-  Phone,
   Search,
+  Trash2,
   Shield,
   Sparkles,
   Sun,
@@ -28,7 +28,15 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { api, ApiCategory, ApiPlayer, ApiTeam, Gender } from "./lib/api";
+import {
+  api,
+  ApiCategory,
+  ApiGalleryImage,
+  ApiPlayer,
+  ApiTeam,
+  galleryImageUrl,
+  Gender,
+} from "./lib/api";
 import { clearAdminKey, isAdmin, setAdminKey } from "./lib/auth";
 import {
   CategoryData,
@@ -44,7 +52,14 @@ import {
 type Category = string;
 type MatchStatus = GroupMatch["status"];
 
-const TOURNAMENT_START = new Date("2026-06-09T10:00:00");
+const TOURNAMENT_START = new Date(2026, 5, 12, 11, 0, 0);
+
+const DISPLAY_CATEGORIES = [
+  "Men's Singles",
+  "Women's Singles",
+  "Men's Doubles",
+  "Mixed Doubles",
+] as const;
 
 const RULES_CATEGORIES = [
   {
@@ -76,7 +91,7 @@ const RULES_CATEGORIES = [
     rules: [
       "Foul Penalty: A foul immediately ends the player's turn. Under ICF rules, a foul incurs a one-coin penalty.",
       "Striker Pocketed: If the striker is pocketed, it is a foul with one penalty coin returned. If no coins pocketed yet, the penalty is owed.",
-      "Coin + Striker Together: If a player pockets their own coin and striker in the same shot, that coin is placed back and an additional penalty applies.",
+      "Coin + Striker Together: If a player pockets their own coin and the striker in the same proper stroke, the pocketed coin and one additional Due coin shall be returned to the board (total of 2 coins returned). The player shall continue their turn.",
       "Touching Pieces: Physically touching any coin in play (other than the striker during positioning) is a foul.",
     ],
   },
@@ -113,11 +128,7 @@ const CATEGORY_META: Record<
     icon: Users,
     color: "from-emerald-500/20 to-emerald-600/5",
   },
-  "Women's Doubles": {
-    icon: Award,
-    color: "from-purple-500/20 to-purple-600/5",
-  },
-  "Mixed Doubles": { icon: Users, color: "from-teal-500/20 to-teal-600/5" },
+  "Mixed Doubles": { icon: Award, color: "from-teal-500/20 to-teal-600/5" },
 };
 
 function getCategoryMeta(name: string) {
@@ -169,52 +180,636 @@ function sortStandings(standings: PlayerStanding[]): PlayerStanding[] {
 
 // ─── Decorative Components ─────────────────────────────────────────────────────
 
-function FloatingCoin({
-  color,
-  className,
-  delay = 0,
-}: {
-  color: "white" | "black" | "red";
-  className?: string;
-  delay?: number;
-}) {
-  const styles =
-    color === "white"
-      ? "bg-stone-200 dark:bg-slate-100 border-slate-400/80 shadow-inner"
-      : color === "black"
-        ? "bg-slate-900 border-slate-800/90 shadow-inner"
-        : "bg-rose-600 border-rose-400 shadow-inner";
-  return (
-    <motion.div
-      className={`absolute w-8 h-8 md:w-10 md:h-10 rounded-full ${styles} border-2 shadow-lg ${className}`}
-      animate={{ y: [0, -18, 0], rotate: [0, 8, 0] }}
-      transition={{
-        duration: 5 + delay,
-        repeat: Infinity,
-        ease: "easeInOut",
-        delay,
-      }}
-    />
+type CoinColor = "white" | "black" | "red";
+
+type SimCoin = {
+  id: number;
+  homeX: number;
+  homeY: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  color: CoinColor;
+};
+
+type CarromSim = {
+  striker: { x: number; y: number; vx: number; vy: number };
+  coins: SimCoin[];
+  idleMs: number;
+  resetting: boolean;
+};
+
+const COIN_COLORS: CoinColor[] = [
+  "white",
+  "white",
+  "white",
+  "white",
+  "black",
+  "black",
+  "black",
+  "black",
+  "red",
+];
+
+const STRIKER_RADIUS = 5;
+const COIN_RADIUS = 2.55;
+const STRIKER_MASS = 3.2;
+const COIN_MASS = 1;
+const RESTITUTION = 0.9;
+const STRIKER_FRICTION_FAST = 0.95;
+const STRIKER_FRICTION_SLOW = 3.8;
+const COIN_FRICTION_FAST = 0.72;
+const COIN_FRICTION_SLOW = 2.1;
+const COIN_RENDER_SMOOTHING = 14;
+const STOP_SPEED = 0.1;
+const BOARD_MARGIN = 5;
+const AUTO_SHOT_PAUSE_MS = 900;
+const RESET_DURATION_MS = 1000;
+const POST_SHOT_IDLE_MS = 2800;
+const SHOT_SPEED_MIN = 58;
+const SHOT_SPEED_MAX = 76;
+const BASELINE_Y = 88;
+const MIN_COIN_GAP = 7.5;
+
+function isInTextZone(x: number, y: number) {
+  return x > 35 && x < 65 && y > 30 && y < 60;
+}
+
+function randomCoinPositions(count: number) {
+  const positions: { x: number; y: number }[] = [];
+  let attempts = 0;
+
+  while (positions.length < count && attempts < 600) {
+    attempts += 1;
+    const x = 7 + Math.random() * 86;
+    const y = 16 + Math.random() * 62;
+    if (isInTextZone(x, y)) continue;
+    if (y > BASELINE_Y - 6) continue;
+    const crowded = positions.some(
+      (p) => Math.hypot(p.x - x, p.y - y) < MIN_COIN_GAP,
+    );
+    if (crowded) continue;
+    positions.push({ x, y });
+  }
+
+  while (positions.length < count) {
+    const i = positions.length;
+    positions.push({
+      x: i % 2 === 0 ? 12 + i * 4 : 88 - i * 4,
+      y: 20 + (i % 4) * 14,
+    });
+  }
+
+  return positions;
+}
+
+function buildCoins(): SimCoin[] {
+  const positions = randomCoinPositions(COIN_COLORS.length);
+  return COIN_COLORS.map((color, id) => ({
+    id,
+    homeX: positions[id].x,
+    homeY: positions[id].y,
+    x: positions[id].x,
+    y: positions[id].y,
+    vx: 0,
+    vy: 0,
+    color,
+  }));
+}
+
+function createSim(): CarromSim {
+  return {
+    striker: {
+      x: 50,
+      y: BASELINE_Y,
+      vx: 0,
+      vy: 0,
+    },
+    coins: buildCoins(),
+    idleMs: AUTO_SHOT_PAUSE_MS,
+    resetting: false,
+  };
+}
+
+function pickShotTarget(sim: CarromSim) {
+  const ranked = [...sim.coins].sort((a, b) => {
+    const da = Math.hypot(a.x - sim.striker.x, a.y - sim.striker.y);
+    const db = Math.hypot(b.x - sim.striker.x, b.y - sim.striker.y);
+    return da - db;
+  });
+  const pool = ranked.slice(0, Math.min(4, ranked.length));
+  return pool[Math.floor(Math.random() * pool.length)] ?? sim.coins[0];
+}
+
+function applyCarromFriction(
+  vx: number,
+  vy: number,
+  dt: number,
+  fast: number,
+  slow: number,
+) {
+  const speed = Math.hypot(vx, vy);
+  const blend = Math.min(1, speed / 20);
+  const friction = slow + (fast - slow) * blend;
+  const damp = Math.exp(-friction * dt);
+  return { vx: vx * damp, vy: vy * damp };
+}
+
+function autoShoot(sim: CarromSim) {
+  const target = pickShotTarget(sim);
+  const offset = (Math.random() - 0.5) * 32;
+  sim.striker.x = Math.min(84, Math.max(16, target.x + offset));
+  sim.striker.y = BASELINE_Y;
+  sim.striker.vx = 0;
+  sim.striker.vy = 0;
+
+  const dx = target.x - sim.striker.x + (Math.random() - 0.5) * 2;
+  const dy = target.y - sim.striker.y + (Math.random() - 0.5) * 2;
+  const len = Math.hypot(dx, dy) || 1;
+  const speed =
+    SHOT_SPEED_MIN + Math.random() * (SHOT_SPEED_MAX - SHOT_SPEED_MIN);
+
+  sim.striker.vx = (dx / len) * speed;
+  sim.striker.vy = (dy / len) * speed;
+  sim.idleMs = 0;
+}
+
+function coinsDisplaced(sim: CarromSim) {
+  return sim.coins.some(
+    (c) => Math.hypot(c.x - c.homeX, c.y - c.homeY) > 0.35,
   );
 }
 
-function FloatingStriker({ className }: { className?: string }) {
+function hasMotion(sim: CarromSim) {
+  if (Math.hypot(sim.striker.vx, sim.striker.vy) > STOP_SPEED) return true;
+  return sim.coins.some((c) => Math.hypot(c.vx, c.vy) > STOP_SPEED);
+}
+
+function resolveCircleCollision(
+  ax: number,
+  ay: number,
+  avx: number,
+  avy: number,
+  am: number,
+  ar: number,
+  bx: number,
+  by: number,
+  bvx: number,
+  bvy: number,
+  bm: number,
+  br: number,
+) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dist = Math.hypot(dx, dy);
+  const minDist = ar + br;
+  if (dist >= minDist || dist === 0) {
+    return {
+      ax,
+      ay,
+      avx,
+      avy,
+      bx,
+      by,
+      bvx,
+      bvy,
+    };
+  }
+
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const overlap = minDist - dist;
+  const totalMass = am + bm;
+
+  let nax = ax - (nx * overlap * bm) / totalMass;
+  let nay = ay - (ny * overlap * bm) / totalMass;
+  let nbx = bx + (nx * overlap * am) / totalMass;
+  let nby = by + (ny * overlap * am) / totalMass;
+
+  const rvx = bvx - avx;
+  const rvy = bvy - avy;
+  const relNormal = rvx * nx + rvy * ny;
+  if (relNormal < 0) {
+    const impulse = (-(1 + RESTITUTION) * relNormal) / (1 / am + 1 / bm);
+    const ix = impulse * nx;
+    const iy = impulse * ny;
+    avx -= ix / am;
+    avy -= iy / am;
+    bvx += ix / bm;
+    bvy += iy / bm;
+  }
+
+  return { ax: nax, ay: nay, avx, avy, bx: nbx, by: nby, bvx, bvy };
+}
+
+function applyWallBounce(
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  radius: number,
+) {
+  const m = BOARD_MARGIN + radius;
+  let nx = x;
+  let ny = y;
+  let nvx = vx;
+  let nvy = vy;
+
+  const wallKeep = radius <= COIN_RADIUS ? 0.62 : 0.55;
+  if (nx < m) {
+    nx = m;
+    nvx = Math.abs(nvx) * wallKeep;
+    nvy *= 0.92;
+  } else if (nx > 100 - m) {
+    nx = 100 - m;
+    nvx = -Math.abs(nvx) * wallKeep;
+    nvy *= 0.92;
+  }
+  if (ny < m) {
+    ny = m;
+    nvy = Math.abs(nvy) * wallKeep;
+    nvx *= 0.92;
+  } else if (ny > 100 - m) {
+    ny = 100 - m;
+    nvy = -Math.abs(nvy) * wallKeep;
+    nvx *= 0.92;
+  }
+
+  return { x: nx, y: ny, vx: nvx, vy: nvy };
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
+function stepPhysics(sim: CarromSim, dt: number) {
+  const substeps = 5;
+  const subDt = dt / substeps;
+
+  for (let step = 0; step < substeps; step++) {
+    stepPhysicsSubstep(sim, subDt);
+  }
+}
+
+function stepPhysicsSubstep(sim: CarromSim, dt: number) {
+  const s = sim.striker;
+  s.x += s.vx * dt;
+  s.y += s.vy * dt;
+  const strikerDrag = applyCarromFriction(
+    s.vx,
+    s.vy,
+    dt,
+    STRIKER_FRICTION_FAST,
+    STRIKER_FRICTION_SLOW,
+  );
+  s.vx = strikerDrag.vx;
+  s.vy = strikerDrag.vy;
+
+  const strikerWall = applyWallBounce(s.x, s.y, s.vx, s.vy, STRIKER_RADIUS);
+  s.x = strikerWall.x;
+  s.y = strikerWall.y;
+  s.vx = strikerWall.vx;
+  s.vy = strikerWall.vy;
+
+  for (const coin of sim.coins) {
+    coin.x += coin.vx * dt;
+    coin.y += coin.vy * dt;
+    const coinDrag = applyCarromFriction(
+      coin.vx,
+      coin.vy,
+      dt,
+      COIN_FRICTION_FAST,
+      COIN_FRICTION_SLOW,
+    );
+    coin.vx = coinDrag.vx;
+    coin.vy = coinDrag.vy;
+
+    const hit = resolveCircleCollision(
+      s.x,
+      s.y,
+      s.vx,
+      s.vy,
+      STRIKER_MASS,
+      STRIKER_RADIUS,
+      coin.x,
+      coin.y,
+      coin.vx,
+      coin.vy,
+      COIN_MASS,
+      COIN_RADIUS,
+    );
+    s.x = hit.ax;
+    s.y = hit.ay;
+    s.vx = hit.avx;
+    s.vy = hit.avy;
+    coin.x = hit.bx;
+    coin.y = hit.by;
+    coin.vx = hit.bvx;
+    coin.vy = hit.bvy;
+
+    const coinWall = applyWallBounce(
+      coin.x,
+      coin.y,
+      coin.vx,
+      coin.vy,
+      COIN_RADIUS,
+    );
+    coin.x = coinWall.x;
+    coin.y = coinWall.y;
+    coin.vx = coinWall.vx;
+    coin.vy = coinWall.vy;
+  }
+
+  for (let i = 0; i < sim.coins.length; i++) {
+    for (let j = i + 1; j < sim.coins.length; j++) {
+      const a = sim.coins[i];
+      const b = sim.coins[j];
+      const hit = resolveCircleCollision(
+        a.x,
+        a.y,
+        a.vx,
+        a.vy,
+        COIN_MASS,
+        COIN_RADIUS,
+        b.x,
+        b.y,
+        b.vx,
+        b.vy,
+        COIN_MASS,
+        COIN_RADIUS,
+      );
+      a.x = hit.ax;
+      a.y = hit.ay;
+      a.vx = hit.avx;
+      a.vy = hit.avy;
+      b.x = hit.bx;
+      b.y = hit.by;
+      b.vx = hit.bvx;
+      b.vy = hit.bvy;
+    }
+  }
+}
+
+function stepCarromSim(sim: CarromSim, dt: number) {
+  if (sim.resetting) {
+    sim.idleMs += dt * 1000;
+    const progress = Math.min(1, sim.idleMs / RESET_DURATION_MS);
+    const ease = 1 - (1 - progress) ** 3;
+
+    for (const coin of sim.coins) {
+      coin.x = coin.homeX + (coin.x - coin.homeX) * (1 - ease);
+      coin.y = coin.homeY + (coin.y - coin.homeY) * (1 - ease);
+      coin.vx = 0;
+      coin.vy = 0;
+    }
+
+    sim.striker.vx = 0;
+    sim.striker.vy = 0;
+    sim.striker.x += (50 - sim.striker.x) * ease * 0.1;
+    sim.striker.y += (BASELINE_Y - sim.striker.y) * ease * 0.1;
+
+    if (progress >= 1) {
+      sim.resetting = false;
+      sim.idleMs = 0;
+      sim.coins = buildCoins();
+      sim.striker.x = 50;
+      sim.striker.y = BASELINE_Y;
+      sim.striker.vx = 0;
+      sim.striker.vy = 0;
+    }
+    return;
+  }
+
+  if (hasMotion(sim)) {
+    stepPhysics(sim, dt);
+    sim.idleMs = 0;
+    return;
+  }
+
+  sim.idleMs += dt * 1000;
+
+  if (coinsDisplaced(sim)) {
+    if (sim.idleMs >= POST_SHOT_IDLE_MS) {
+      sim.resetting = true;
+      sim.idleMs = 0;
+    }
+    return;
+  }
+
+  if (sim.idleMs >= AUTO_SHOT_PAUSE_MS) {
+    autoShoot(sim);
+  }
+}
+
+function FloatingCarromCoin({
+  color,
+  floating,
+  delay = 0,
+}: {
+  color: CoinColor;
+  floating?: boolean;
+  delay?: number;
+}) {
+  const palette =
+    color === "white"
+      ? {
+          edge: "#9a8468",
+          face: "radial-gradient(circle at 35% 28%, #fffffa 0%, #f6eedc 38%, #e2d2b4 72%, #c9b08e 100%)",
+          grain: "rgba(139, 105, 20, 0.06)",
+          ring: "rgba(100, 78, 48, 0.28)",
+          crown: "rgba(255,255,255,0.62)",
+        }
+      : color === "black"
+        ? {
+            edge: "#1a0e08",
+            face: "radial-gradient(circle at 35% 28%, #4f382c 0%, #2e1c14 42%, #1a0e08 100%)",
+            grain: "rgba(255,255,255,0.04)",
+            ring: "rgba(255,255,255,0.1)",
+            crown: "rgba(255,255,255,0.14)",
+          }
+        : {
+            edge: "#cc0000",
+            face: "radial-gradient(circle at 35% 28%, #ff3333 0%, #ff0000 45%, #e60000 78%, #cc0000 100%)",
+            grain: "rgba(255, 255, 255, 0.06)",
+            ring: "rgba(255, 255, 255, 0.25)",
+            crown: "rgba(255,255,255,0.45)",
+          };
+
   return (
-    <motion.div
-      className={`absolute w-20 h-20 md:w-16 md:h-16 rounded-full bg-striker border-4 border-striker-ring shadow-2xl overflow-hidden ${className}`}
-      animate={{
-        x: [0, 12, -10, 0],
-        y: [0, -6, -3, 0],
-        rotate: [0, 20, -20, 0],
-      }}
-      transition={{ duration: 2.0, repeat: Infinity, ease: "easeInOut" }}
+    <div
+      className={`relative w-11 h-11 md:w-12 md:h-12 ${color === "red" ? "opacity-100" : "opacity-90"} ${floating ? "carrom-coin-float" : ""}`}
+      style={{ animationDelay: `${delay}s` }}
     >
-      <img
-        src="/tw.jpg"
-        alt="Thoughtworks logo"
-        className="absolute inset-0 w-full h-full object-cover rounded-full opacity-95"
+      <div
+        className="absolute left-1/2 -translate-x-1/2 bottom-[-8%] w-[76%] h-[20%] rounded-[50%] bg-slate-900/20 blur-[4px]"
+        aria-hidden
       />
-    </motion.div>
+      <div className="absolute inset-0 rounded-full" style={{ padding: "3px" }}>
+        <div
+          className="absolute inset-0 rounded-full"
+          style={{
+            background:
+              color === "red"
+                ? "linear-gradient(180deg, #ff1a1a 0%, #b30000 100%)"
+                : `linear-gradient(180deg, ${palette.edge} 0%, #0f0a06 100%)`,
+            boxShadow:
+              color === "red"
+                ? "0 4px 12px rgba(255, 0, 0, 0.35)"
+                : "0 4px 10px rgba(15, 23, 42, 0.28)",
+          }}
+        />
+        <div
+          className="absolute inset-[3px] rounded-full overflow-hidden"
+          style={{
+            background: palette.face,
+            boxShadow:
+              color === "red"
+                ? "inset 0 3px 6px rgba(255,255,255,0.4), inset 0 -4px 6px rgba(180, 0, 0, 0.25)"
+                : "inset 0 3px 6px rgba(255,255,255,0.42), inset 0 -5px 8px rgba(0,0,0,0.28)",
+          }}
+        >
+          <div
+            className="absolute inset-0 opacity-80"
+            style={{
+              backgroundImage: `repeating-linear-gradient(118deg, transparent, transparent 3px, ${palette.grain} 3px, ${palette.grain} 4px)`,
+            }}
+          />
+          <div
+            className="absolute inset-[16%] rounded-full border"
+            style={{ borderColor: palette.ring }}
+          />
+          <div
+            className="absolute inset-[30%] rounded-full border"
+            style={{ borderColor: palette.ring, opacity: 0.75 }}
+          />
+          {color === "red" && (
+            <div
+              className="absolute inset-[22%] rounded-full border-2"
+              style={{ borderColor: "rgba(255, 255, 255, 0.35)" }}
+            />
+          )}
+          <div
+            className="absolute top-[16%] left-[22%] w-[38%] h-[24%] rounded-full rotate-[-22deg]"
+            style={{ background: palette.crown }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CarromBoardBackground() {
+  const reduceMotion = useReducedMotion();
+  const simRef = useRef<CarromSim>(createSim());
+  const displayCoinsRef = useRef(
+    createSim().coins.map((c) => ({ x: c.x, y: c.y })),
+  );
+  const lastFrameRef = useRef(performance.now());
+  const [frame, setFrame] = useState(() => createSim());
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    simRef.current = createSim();
+    displayCoinsRef.current = simRef.current.coins.map((c) => ({
+      x: c.x,
+      y: c.y,
+    }));
+    autoShoot(simRef.current);
+    lastFrameRef.current = performance.now();
+    let raf = 0;
+
+    const tick = (now: number) => {
+      const dt = Math.min((now - lastFrameRef.current) / 1000, 0.032);
+      lastFrameRef.current = now;
+      const sim = simRef.current;
+      stepCarromSim(sim, dt);
+
+      if (displayCoinsRef.current.length !== sim.coins.length) {
+        displayCoinsRef.current = sim.coins.map((c) => ({ x: c.x, y: c.y }));
+      }
+
+      const smooth = sim.resetting
+        ? 1
+        : 1 - Math.exp(-COIN_RENDER_SMOOTHING * dt);
+
+      const coins = sim.coins.map((coin, i) => {
+        const prev = displayCoinsRef.current[i] ?? { x: coin.x, y: coin.y };
+        const x = lerp(prev.x, coin.x, smooth);
+        const y = lerp(prev.y, coin.y, smooth);
+        displayCoinsRef.current[i] = { x, y };
+        return { ...coin, x, y };
+      });
+
+      setFrame({
+        striker: { ...sim.striker },
+        coins,
+        idleMs: sim.idleMs,
+        resetting: sim.resetting,
+      });
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [reduceMotion]);
+
+  const striker = reduceMotion ? { x: 50, y: BASELINE_Y } : frame.striker;
+  const boardMoving =
+    !reduceMotion &&
+    (Math.hypot(frame.striker.vx, frame.striker.vy) > STOP_SPEED ||
+      frame.coins.some((c) => Math.hypot(c.vx, c.vy) > STOP_SPEED));
+
+  return (
+    <div
+      className="absolute inset-0 overflow-hidden z-0 max-w-6xl mx-auto left-0 right-0 pointer-events-none opacity-80"
+      aria-hidden
+    >
+      <div className="absolute inset-0 carrom-board-surface opacity-60" />
+
+      <div className="absolute inset-0">
+        {frame.coins.map((coin) => {
+              if (reduceMotion) {
+                return (
+                  <div
+                    key={coin.id}
+                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    style={{ left: `${coin.homeX}%`, top: `${coin.homeY}%` }}
+                  >
+                    <FloatingCarromCoin color={coin.color} floating delay={coin.id * 0.35} />
+                  </div>
+                );
+              }
+              const moving = Math.hypot(coin.vx, coin.vy) > STOP_SPEED;
+              return (
+                <div
+                  key={coin.id}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 will-change-[left,top]"
+                  style={{ left: `${coin.x}%`, top: `${coin.y}%` }}
+                >
+                  <FloatingCarromCoin
+                    color={coin.color}
+                    floating={!moving && !boardMoving}
+                    delay={coin.id * 0.35}
+                  />
+                </div>
+              );
+            })}
+      </div>
+
+      <div
+        className="absolute -translate-x-1/2 -translate-y-1/2"
+        style={{ left: `${striker.x}%`, top: `${striker.y}%` }}
+      >
+        <div className="relative w-24 h-24 md:w-32 md:h-32 rounded-full bg-gradient-to-br from-white via-white to-stone-50 border-[4px] border-white shadow-[0_10px_28px_rgba(15,23,42,0.15)] p-2 ring-2 ring-white brightness-110">
+          <img
+            src="/tw.jpg"
+            alt=""
+            className="w-full h-full rounded-full object-cover brightness-[1.45] contrast-[1.08] saturate-[1.2]"
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -433,40 +1028,25 @@ function Hero({
       id="hero"
       className="relative min-h-screen flex items-center pt-24 pb-16 overflow-hidden board-pattern"
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-board-light/20 via-transparent to-transparent dark:from-board-dark/30 pointer-events-none" />
-
-      <FloatingCoin color="white" className="top-24 left-[12%] opacity-90" />
-      <FloatingCoin
-        color="black"
-        className="top-28 left-[22%] opacity-90"
-        delay={0.6}
+      <CarromBoardBackground />
+      <div
+        className="absolute inset-0 pointer-events-none z-[1] dark:hidden"
+        style={{
+          background: `
+            radial-gradient(ellipse 58% 52% at 50% 44%, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.72) 42%, rgba(255,255,255,0.2) 72%, transparent 100%),
+            linear-gradient(to bottom, rgba(255,255,255,0.55), rgba(255,255,255,0.35))
+          `,
+        }}
       />
-      <FloatingCoin
-        color="white"
-        className="top-[34%] right-[18%] opacity-90"
-        delay={1.2}
+      <div
+        className="absolute inset-0 pointer-events-none z-[1] hidden dark:block"
+        style={{
+          background: `
+            radial-gradient(ellipse 58% 52% at 50% 44%, rgba(15,23,42,0.92) 0%, rgba(15,23,42,0.78) 42%, rgba(15,23,42,0.35) 72%, transparent 100%),
+            linear-gradient(to bottom, rgba(15,23,42,0.65), rgba(15,23,42,0.45))
+          `,
+        }}
       />
-      <FloatingCoin
-        color="black"
-        className="bottom-[28%] left-[26%] opacity-90"
-        delay={1.8}
-      />
-      <FloatingCoin
-        color="black"
-        className="bottom-[18%] left-[16%] opacity-90"
-        delay={2.1}
-      />
-      <FloatingCoin
-        color="white"
-        className="bottom-[24%] right-[28%] opacity-90"
-        delay={2.4}
-      />
-      <FloatingCoin
-        color="red"
-        className="bottom-[18%] right-[16%] opacity-90"
-        delay={3}
-      />
-      <FloatingStriker className="top-[24%] left-[28%] opacity-100" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
         <motion.div
@@ -523,27 +1103,53 @@ function Hero({
             </motion.button>
           </div>
 
-          {!countdown.done && (
-            <GlassCard className="max-w-lg mx-auto" hover={false}>
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4 flex items-center justify-center gap-2">
-                <Clock className="w-4 h-4" /> Tournament starts in
+          <GlassCard className="max-w-lg mx-auto" hover={false}>
+            {countdown.done ? (
+              <p className="text-xl md:text-2xl font-display font-bold text-accent-teal text-center">
+                Tournament Has Started
               </p>
-              <div className="grid grid-cols-4 gap-3">
-                {(["days", "hours", "minutes", "seconds"] as const).map(
-                  (unit) => (
-                    <div key={unit} className="text-center">
-                      <div className="text-2xl md:text-3xl font-display font-bold text-accent-teal">
-                        {String(countdown[unit]).padStart(2, "0")}
-                      </div>
-                      <div className="text-xs tracking-wider text-slate-500 capitalize">
-                        {unit}
-                      </div>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4 flex items-center justify-center gap-2">
+                  <Clock className="w-4 h-4" /> Tournament Starts In
+                </p>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="text-center">
+                    <div className="text-2xl md:text-3xl font-display font-bold text-accent-teal">
+                      {countdown.days}
                     </div>
-                  ),
-                )}
-              </div>
-            </GlassCard>
-          )}
+                    <div className="text-xs tracking-wider text-slate-500">
+                      Days
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl md:text-3xl font-display font-bold text-accent-teal">
+                      {String(countdown.hours).padStart(2, "0")}
+                    </div>
+                    <div className="text-xs tracking-wider text-slate-500">
+                      Hours
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl md:text-3xl font-display font-bold text-accent-teal">
+                      {String(countdown.minutes).padStart(2, "0")}
+                    </div>
+                    <div className="text-xs tracking-wider text-slate-500">
+                      Minutes
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl md:text-3xl font-display font-bold text-accent-teal">
+                      {String(countdown.seconds).padStart(2, "0")}
+                    </div>
+                    <div className="text-xs tracking-wider text-slate-500">
+                      Seconds
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </GlassCard>
         </motion.div>
       </div>
     </section>
@@ -599,11 +1205,16 @@ function StatsBar({
 
 // ─── Categories ────────────────────────────────────────────────────────────────
 
+const CATEGORY_TAGLINES: Record<string, string> = {
+  "Men's Singles": "Individual men's competition",
+  "Women's Singles": "Individual women's competition",
+  "Men's Doubles": "Men's pairs on the board",
+  "Mixed Doubles": "Mixed-gender doubles teams",
+};
+
 function Categories({
-  tournament,
   onSelectCategory,
 }: {
-  tournament: CategoryData[];
   onSelectCategory: (c: Category) => void;
 }) {
   return (
@@ -611,11 +1222,11 @@ function Categories({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="Tournament Categories"
-          subtitle="Browse categories and their groups"
+          subtitle="Browse all tournament categories"
           icon={LayoutGrid}
         />
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {tournament.map(({ category, groups }, i) => {
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {DISPLAY_CATEGORIES.map((category, i) => {
             const { icon: Icon, color } = getCategoryMeta(category);
             return (
               <motion.div
@@ -636,24 +1247,10 @@ function Categories({
                     <h3 className="font-display text-xl font-bold text-slate-900 dark:text-white">
                       {category}
                     </h3>
-                    {groups.length > 0 ? (
-                      <ul className="mt-3 space-y-1">
-                        {groups.map((group) => (
-                          <li
-                            key={group.id}
-                            className="text-sm text-slate-600 dark:text-slate-400 flex items-center gap-2"
-                          >
-                            <Circle className="w-2 h-2 fill-accent-teal text-accent-teal" />
-                            {group.name}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                        No groups yet
-                      </p>
-                    )}
-                    <p className="text-sm text-accent-teal mt-3 font-medium">
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                      {CATEGORY_TAGLINES[category]}
+                    </p>
+                    <p className="text-sm text-accent-teal mt-4 font-medium">
                       View standings & matches →
                     </p>
                   </GlassCard>
@@ -723,9 +1320,9 @@ function Scoring() {
   const scenarios = [
     {
       title: "Winning team pots red",
-      formula: "Score = 5 + remaining opponent coins",
-      example: "Opponent has 3 coins left → Final score = 8",
-      highlight: "8",
+      formula: "Score = 3 + remaining opponent coins",
+      example: "Opponent has 3 coins left → Final score = 6",
+      highlight: "6",
       icon: Trophy,
       gradient: "from-amber-500/30 to-orange-500/10",
     },
@@ -1412,6 +2009,37 @@ function CategoryTabs({
   );
 }
 
+function GroupTabs({
+  groups,
+  active,
+  onChange,
+}: {
+  groups: TournamentGroup[];
+  active: string | null;
+  onChange: (groupId: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap justify-center gap-2 mb-8">
+      {groups.map((group) => {
+        const isActive = active === group.id;
+        return (
+          <button
+            key={group.id}
+            onClick={() => onChange(group.id)}
+            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              isActive
+                ? "bg-board-dark text-white shadow-lg shadow-board-dark/30 dark:bg-board-light dark:text-board-dark"
+                : "glass text-slate-700 dark:text-slate-300 hover:bg-board/10"
+            }`}
+          >
+            {group.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function CategoryTournamentSection({
   data,
   categories,
@@ -1436,6 +2064,7 @@ function CategoryTournamentSection({
     },
   ) => Promise<void>;
 }) {
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const categoryData = data.find((d) => d.category === activeCategory);
   const statusColors: Record<MatchStatus, string> = {
     Live: "bg-red-500 text-white animate-pulse",
@@ -1481,6 +2110,20 @@ function CategoryTournamentSection({
       .filter(Boolean) as TournamentGroup[];
   }, [categoryData, search]);
 
+  useEffect(() => {
+    if (filteredGroups.length === 0) {
+      setActiveGroupId(null);
+      return;
+    }
+    setActiveGroupId((current) =>
+      current && filteredGroups.some((g) => g.id === current)
+        ? current
+        : filteredGroups[0].id,
+    );
+  }, [filteredGroups, activeCategory]);
+
+  const activeGroup = filteredGroups.find((g) => g.id === activeGroupId);
+
   const saveMatch = async (
     match: GroupMatch,
     update: {
@@ -1510,23 +2153,12 @@ function CategoryTournamentSection({
           onChange={setActiveCategory}
         />
 
-        {categoryData && categoryData.groups.length > 0 && (
-          <div className="mb-8 glass rounded-xl p-4 max-w-md mx-auto">
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-              {activeCategory}
-            </p>
-            <ul className="space-y-1">
-              {categoryData.groups.map((group) => (
-                <li
-                  key={group.id}
-                  className="text-sm text-slate-600 dark:text-slate-400 flex items-center gap-2"
-                >
-                  <Circle className="w-2 h-2 fill-accent-teal text-accent-teal" />
-                  {group.name}
-                </li>
-              ))}
-            </ul>
-          </div>
+        {filteredGroups.length > 0 && (
+          <GroupTabs
+            groups={filteredGroups}
+            active={activeGroupId}
+            onChange={setActiveGroupId}
+          />
         )}
 
         {liveMatches.length > 0 && (
@@ -1568,174 +2200,165 @@ function CategoryTournamentSection({
           </motion.div>
         )}
 
-        <div className="space-y-10">
-          {filteredGroups.map((group) => {
-            const sorted = sortStandings(group.standings);
-
-            return (
-              <motion.div
-                key={group.id}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+        {activeGroup && (
+          <motion.div
+            key={activeGroup.id}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <GlassCard hover={false} className="overflow-hidden p-0">
+              <div
+                className={`px-6 py-4 bg-gradient-to-r ${getCategoryMeta(activeCategory).color} border-b border-white/20`}
               >
-                <GlassCard hover={false} className="overflow-hidden p-0">
-                  <div
-                    className={`px-6 py-4 bg-gradient-to-r ${getCategoryMeta(activeCategory).color} border-b border-white/20`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-accent-teal">
-                          {activeCategory}
-                        </p>
-                        <h3 className="font-display text-2xl font-bold">
-                          {group.name}
-                        </h3>
-                      </div>
-                    </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-accent-teal">
+                      {activeCategory}
+                    </p>
+                    <h3 className="font-display text-2xl font-bold">
+                      {activeGroup.name} Standings
+                    </h3>
                   </div>
+                </div>
+              </div>
 
-                  <div className="p-6 grid lg:grid-cols-2 gap-8">
-                    {/* Group players */}
-                    <div>
-                      <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
-                        <Users className="w-5 h-5 text-accent-teal" />
-                        Players in group
-                      </h4>
-                      <ul className="space-y-2 mb-6">
-                        {group.standings.map((s, i) => (
-                          <li
-                            key={s.id}
-                            className="flex items-center gap-2 text-slate-700 dark:text-slate-300"
-                          >
-                            <span className="w-6 h-6 rounded-full bg-board/20 text-xs font-bold flex items-center justify-center">
-                              {i + 1}
-                            </span>
-                            <Circle className="w-2 h-2 fill-board text-board" />
-                            {s.name}
-                          </li>
-                        ))}
-                      </ul>
+              <div className="p-6 grid lg:grid-cols-2 gap-8">
+                <div>
+                  <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-accent-teal" />
+                    Players in group
+                  </h4>
+                  <ul className="space-y-2 mb-6">
+                    {activeGroup.standings.map((s, i) => (
+                      <li
+                        key={s.id}
+                        className="flex items-center gap-2 text-slate-700 dark:text-slate-300"
+                      >
+                        <span className="w-6 h-6 rounded-full bg-board/20 text-xs font-bold flex items-center justify-center">
+                          {i + 1}
+                        </span>
+                        <Circle className="w-2 h-2 fill-board text-board" />
+                        {s.name}
+                      </li>
+                    ))}
+                  </ul>
 
-                      {/* Points table — per group only */}
-                      <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
-                        <Trophy className="w-5 h-5 text-accent-gold" />
-                        Standings
-                      </h4>
-                      <div className="overflow-x-auto rounded-xl glass">
-                        <table className="w-full text-left text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-200 dark:border-slate-700">
-                              <th className="px-3 py-3 font-semibold">#</th>
-                              <th className="px-3 py-3 font-semibold">
-                                Player
-                              </th>
-                              <th className="px-3 py-3 text-center font-semibold">
-                                Played
-                              </th>
-                              <th className="px-3 py-3 text-center font-semibold">
-                                W
-                              </th>
-                              <th className="px-3 py-3 text-center font-semibold">
-                                L
-                              </th>
-                              <th className="px-3 py-3 text-center font-semibold">
-                                Points
-                              </th>
-                              <th className="px-3 py-3 text-center font-semibold">
-                                Score
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sorted.map((entry, idx) => (
-                              <tr
-                                key={entry.id}
-                                className="border-b border-slate-100 dark:border-slate-800 hover:bg-accent-teal/5"
-                              >
-                                <td className="px-3 py-3">
-                                  <RankBadge rank={idx + 1} />
-                                </td>
-                                <td className="px-3 py-3 font-medium">
-                                  {entry.name}
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  {entry.matchesPlayed}
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  {entry.wins}
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  {entry.losses}
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  <span className="font-bold text-accent-teal">
-                                    {entry.points}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-3 text-center">
-                                  {entry.score}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Matches */}
-                    <div>
-                      <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
-                        <Calendar className="w-5 h-5 text-accent-teal" />
-                        Matches
-                      </h4>
-                      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                        {group.matches.map((match, mi) => (
-                          <div
-                            key={match.id}
-                            className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-xl glass text-sm ${
-                              match.status === "Live"
-                                ? "ring-2 ring-red-500/40"
-                                : ""
-                            }`}
-                          >
-                            <span className="text-xs font-mono text-slate-400 w-16">
-                              Match {mi + 1}
-                            </span>
-                            <div className="flex-1 font-medium">
-                              {match.playerA}{" "}
-                              <span className="text-accent-teal">vs</span>{" "}
-                              {match.playerB}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {group.name} · {activeCategory}
-                            </div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                              {adminMode ? (
-                                <MatchAdminControls
-                                  match={match}
-                                  groupName={group.name}
-                                  categoryName={activeCategory}
-                                  onSave={saveMatch}
-                                />
-                              ) : (
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[match.status]}`}
-                                >
-                                  {match.status}
+                  <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
+                    <Trophy className="w-5 h-5 text-accent-gold" />
+                    Standings
+                  </h4>
+                  <div className="overflow-x-auto rounded-xl glass">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                          <th className="px-3 py-3 font-semibold">#</th>
+                          <th className="px-3 py-3 font-semibold">Player</th>
+                          <th className="px-3 py-3 text-center font-semibold">
+                            Played
+                          </th>
+                          <th className="px-3 py-3 text-center font-semibold">
+                            W
+                          </th>
+                          <th className="px-3 py-3 text-center font-semibold">
+                            L
+                          </th>
+                          <th className="px-3 py-3 text-center font-semibold">
+                            Points
+                          </th>
+                          <th className="px-3 py-3 text-center font-semibold">
+                            Score
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortStandings(activeGroup.standings).map(
+                          (entry, idx) => (
+                            <tr
+                              key={entry.id}
+                              className="border-b border-slate-100 dark:border-slate-800 hover:bg-accent-teal/5"
+                            >
+                              <td className="px-3 py-3">
+                                <RankBadge rank={idx + 1} />
+                              </td>
+                              <td className="px-3 py-3 font-medium">
+                                {entry.name}
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                {entry.matchesPlayed}
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                {entry.wins}
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                {entry.losses}
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <span className="font-bold text-accent-teal">
+                                  {entry.points}
                                 </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                {entry.score}
+                              </td>
+                            </tr>
+                          ),
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                </GlassCard>
-              </motion.div>
-            );
-          })}
-        </div>
+                </div>
+
+                <div>
+                  <h4 className="font-display font-semibold mb-3 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-accent-teal" />
+                    Matches
+                  </h4>
+                  <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                    {activeGroup.matches.map((match, mi) => (
+                      <div
+                        key={match.id}
+                        className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-xl glass text-sm ${
+                          match.status === "Live"
+                            ? "ring-2 ring-red-500/40"
+                            : ""
+                        }`}
+                      >
+                        <span className="text-xs font-mono text-slate-400 w-16">
+                          Match {mi + 1}
+                        </span>
+                        <div className="flex-1 font-medium">
+                          {match.playerA}{" "}
+                          <span className="text-accent-teal">vs</span>{" "}
+                          {match.playerB}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {activeGroup.name} · {activeCategory}
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                          {adminMode ? (
+                            <MatchAdminControls
+                              match={match}
+                              groupName={activeGroup.name}
+                              categoryName={activeCategory}
+                              onSave={saveMatch}
+                            />
+                          ) : (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[match.status]}`}
+                            >
+                              {match.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
 
         {filteredGroups.length === 0 && (
           <p className="text-center text-slate-500 py-12">
@@ -1752,16 +2375,15 @@ function CategoryTournamentSection({
 function TournamentInfo() {
   const items = [
     { icon: MapPin, label: "Venue", value: "Thoughtworks Hyderabad Office" },
-    { icon: Calendar, label: "Starts", value: "June 2nd Week, 2026" },
     {
       icon: Users,
       label: "Format",
       value: "Group stage tournament across categories",
     },
     {
-      icon: Gamepad2,
-      label: "Spirit",
-      value: "Friendly office tournament with local rules",
+      icon: Calendar,
+      label: "Start Date",
+      value: "12 June, 11:00 AM",
     },
   ];
 
@@ -1789,29 +2411,129 @@ function TournamentInfo() {
   );
 }
 
-function Gallery() {
-  const placeholders = Array.from({ length: 6 }, (_, i) => i + 1);
+function Gallery({ adminMode }: { adminMode: boolean }) {
+  const [images, setImages] = useState<ApiGalleryImage[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [galleryMessage, setGalleryMessage] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadImages = useCallback(async () => {
+    try {
+      setImages(await api.getGalleryImages());
+    } catch {
+      setImages([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadImages();
+  }, [loadImages]);
+
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    setGalleryMessage("");
+    try {
+      await api.uploadGalleryImage(file);
+      setGalleryMessage("Image uploaded");
+      await loadImages();
+    } catch (e) {
+      setGalleryMessage(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async (imageId: string) => {
+    setGalleryMessage("");
+    try {
+      await api.deleteGalleryImage(imageId);
+      setGalleryMessage("Image removed");
+      await loadImages();
+    } catch (e) {
+      setGalleryMessage(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
 
   return (
     <section id="gallery" className="py-20 bg-slate-50/50 dark:bg-slate-900/30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeader
           title="Tournament Gallery"
-          subtitle="Photos will be added after the tournament"
+          subtitle={
+            adminMode
+              ? "Upload tournament photos — visible to everyone"
+              : images.length > 0
+                ? "Tournament moments"
+                : "Photos will be added after the tournament"
+          }
           icon={Camera}
         />
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {placeholders.map((n) => (
-            <motion.div
-              key={n}
-              whileHover={{ scale: 1.03 }}
-              className="aspect-square rounded-2xl glass flex flex-col items-center justify-center gap-2 text-slate-400"
+
+        {adminMode && (
+          <div className="mb-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleUpload(file);
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-teal text-white font-semibold text-sm disabled:opacity-50"
             >
-              <Camera className="w-10 h-10 opacity-40" />
-              <span className="text-sm font-medium">Photo {n}</span>
-            </motion.div>
-          ))}
-        </div>
+              <ImagePlus className="w-4 h-4" />
+              {uploading ? "Uploading..." : "Add Photo"}
+            </button>
+            {galleryMessage && (
+              <p className="text-sm text-accent-teal">{galleryMessage}</p>
+            )}
+          </div>
+        )}
+
+        {images.length > 0 ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {images.map((image) => (
+              <motion.div
+                key={image.id}
+                whileHover={{ scale: 1.02 }}
+                className="relative aspect-square rounded-2xl overflow-hidden glass group"
+              >
+                <img
+                  src={galleryImageUrl(image.url_path)}
+                  alt={image.filename}
+                  className="w-full h-full object-cover"
+                />
+                {adminMode && (
+                  <button
+                    onClick={() => void handleDelete(image.id)}
+                    className="absolute top-2 right-2 p-2 rounded-lg bg-red-500/90 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove image"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }, (_, i) => (
+              <div
+                key={i}
+                className="aspect-square rounded-2xl glass flex flex-col items-center justify-center gap-2 text-slate-400"
+              >
+                <Camera className="w-10 h-10 opacity-40" />
+                <span className="text-sm font-medium">No photos yet</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -1848,14 +2570,6 @@ function Footer() {
                 Carrom Tournament 2026 · Internal Event
               </p>
             </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-6 text-sm text-slate-600 dark:text-slate-400">
-            <span className="inline-flex items-center gap-2">
-              <Mail className="w-4 h-4" /> organizers@thoughtworks.com
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <Phone className="w-4 h-4" /> +91 XXX XXX XXXX
-            </span>
           </div>
         </div>
       </div>
@@ -1929,13 +2643,11 @@ export default function App() {
       setPlayers(data.players);
       setTeams(data.teams);
       setLoadError(null);
-      if (data.tournament.length > 0) {
-        setActiveCategory((current) =>
-          data.tournament.some((c) => c.category === current)
-            ? current
-            : data.tournament[0].category,
-        );
-      }
+      setActiveCategory((current) =>
+        DISPLAY_CATEGORIES.includes(current as (typeof DISPLAY_CATEGORIES)[number])
+          ? current
+          : DISPLAY_CATEGORIES[0],
+      );
     } catch (e) {
       setLoadError(
         e instanceof Error ? e.message : "Failed to load tournament data",
@@ -1954,9 +2666,24 @@ export default function App() {
     localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
 
-  const categoryLabels = useMemo(
-    () => tournament.map((c) => c.category),
+  const displayTournament = useMemo(
+    () =>
+      DISPLAY_CATEGORIES.map((name) => {
+        const fromApi = tournament.find((c) => c.category === name);
+        return (
+          fromApi ?? {
+            category: name,
+            categoryId: "",
+            groups: [],
+          }
+        );
+      }),
     [tournament],
+  );
+
+  const categoryLabels = useMemo(
+    () => displayTournament.map((c) => c.category),
+    [displayTournament],
   );
   const matchCount = useMemo(
     () =>
@@ -2022,11 +2749,11 @@ export default function App() {
 
       <Hero countdown={countdown} onViewStandings={() => goToStandings()} />
       <StatsBar
-        categoryCount={categoryLabels.length}
+        categoryCount={DISPLAY_CATEGORIES.length}
         playerCount={players.length}
         matchCount={matchCount}
       />
-      <Categories tournament={tournament} onSelectCategory={goToStandings} />
+      <Categories onSelectCategory={goToStandings} />
       <RulesSection />
       <Scoring />
 
@@ -2055,7 +2782,7 @@ export default function App() {
       </div>
 
       <CategoryTournamentSection
-        data={tournament}
+        data={displayTournament}
         categories={categoryLabels}
         activeCategory={activeCategory}
         setActiveCategory={setActiveCategory}
@@ -2064,7 +2791,7 @@ export default function App() {
         onMatchUpdate={handleMatchUpdate}
       />
       <TournamentInfo />
-      <Gallery />
+      <Gallery adminMode={adminMode} />
       <Footer />
 
       <AdminLoginModal

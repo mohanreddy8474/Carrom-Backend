@@ -7,3 +7,8 @@ class AdminVerifyRequest(BaseModel):
 
 class AdminVerifyResponse(BaseModel):
     valid: bool
+
+
+class SeedTestDataResponse(BaseModel):
+    message: str
+    counts: dict[str, int]

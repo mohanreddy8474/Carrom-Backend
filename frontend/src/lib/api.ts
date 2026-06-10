@@ -50,6 +50,14 @@ export interface ApiStanding {
   score: number;
 }
 
+export interface ApiGalleryImage {
+  id: string;
+  filename: string;
+  content_type: string;
+  url_path: string;
+  created_at: string;
+}
+
 export interface ApiMatch {
   id: string;
   category_id: string;
@@ -136,4 +144,33 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+
+  getGalleryImages: () => request<ApiGalleryImage[]>("/gallery"),
+
+  uploadGalleryImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    const adminKey = getAdminKey();
+    if (adminKey) headers["X-Admin-Key"] = adminKey;
+
+    const response = await fetch(`${API_URL}/gallery`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const detail = (body as { detail?: string }).detail || response.statusText;
+      throw new Error(typeof detail === "string" ? detail : "Upload failed");
+    }
+    return response.json() as Promise<ApiGalleryImage>;
+  },
+
+  deleteGalleryImage: (imageId: string) =>
+    request<void>(`/gallery/${imageId}`, { method: "DELETE" }),
 };
+
+export function galleryImageUrl(urlPath: string) {
+  return `${API_URL}${urlPath}`;
+}

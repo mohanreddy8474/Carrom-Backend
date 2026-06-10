@@ -5,6 +5,7 @@ from app.models.group_team import GroupTeam
 from app.models.player import Player
 from app.models.team import Team
 from app.models.match import Match
+from app.models.gallery_image import GalleryImage
 
 __all__ = [
     "Category",
@@ -14,4 +15,5 @@ __all__ = [
     "Player",
     "Team",
     "Match",
+    "GalleryImage",
 ]
