@@ -47,6 +47,8 @@ import {
   toApiStatus,
 } from "./lib/tournament";
 
+const publicAsset = (file: string) => `${import.meta.env.BASE_URL}${file}`;
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Category = string;
@@ -804,7 +806,7 @@ function CarromBoardBackground() {
       >
         <div className="relative w-24 h-24 md:w-32 md:h-32 rounded-full bg-gradient-to-br from-white via-white to-stone-50 border-[4px] border-white shadow-[0_10px_28px_rgba(15,23,42,0.15)] p-2 ring-2 ring-white brightness-110">
           <img
-            src="/tw.jpg"
+            src={publicAsset("tw.jpg")}
             alt=""
             className="w-full h-full rounded-full object-cover brightness-[1.45] contrast-[1.08] saturate-[1.2]"
           />
@@ -931,7 +933,7 @@ function Navbar({
             className="flex items-center gap-3 font-display font-bold text-lg text-slate-900 dark:text-white"
           >
             <img
-              src="/tw.jpg"
+              src={publicAsset("tw.jpg")}
               alt="Thoughtworks"
               className="w-10 h-10 rounded-lg bg-white/90 p-1 shadow-sm object-contain"
             />
@@ -2559,7 +2561,7 @@ function Footer() {
         <div className="flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-4 text-center md:text-left">
             <img
-              src="/thoughtworks_flamingo_wave.png"
+              src={publicAsset("thoughtworks_flamingo_wave.png")}
               alt="Thoughtworks"
               className="w-12 h-12 rounded-lg bg-white/90 p-1 shadow-sm object-contain"
             />
