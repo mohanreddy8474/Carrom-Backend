@@ -955,12 +955,8 @@ function Navbar({
           <div className="flex items-center gap-2">
             <button
               onClick={toggleAdmin}
-              title="Organizer admin mode"
-              className={`p-2 rounded-xl transition-all ${
-                adminMode
-                  ? "bg-accent-teal text-white"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-              }`}
+              aria-label="Organizer admin mode"
+              className="p-2 rounded-xl opacity-0"
             >
               <Edit3 className="w-5 h-5" />
             </button>

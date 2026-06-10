@@ -2,17 +2,32 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.models.enums import MatchStatus, ParticipantType
+from app.models.category import Category
+from app.models.enums import CategoryFormat, Gender, MatchStatus, ParticipantType
 from app.models.group import Group
 from app.models.match import Match
 from app.utils.participants import normalize_pair
 
 
-def _existing_pairs(db: Session, group_id: uuid.UUID) -> set[tuple[uuid.UUID, uuid.UUID]]:
+def matches_per_pair_for_category(category: Category) -> int:
+    """Women's singles groups play each opponent twice; all others play once."""
+    if (
+        category.format == CategoryFormat.SINGLES
+        and category.gender == Gender.FEMALE
+    ):
+        return 2
+    return 1
+
+
+def _pair_match_counts(
+    db: Session, group_id: uuid.UUID
+) -> dict[tuple[uuid.UUID, uuid.UUID], int]:
     matches = db.query(Match).filter(Match.group_id == group_id).all()
-    return {
-        normalize_pair(m.participant1_id, m.participant2_id) for m in matches
-    }
+    counts: dict[tuple[uuid.UUID, uuid.UUID], int] = {}
+    for match in matches:
+        pair = normalize_pair(match.participant1_id, match.participant2_id)
+        counts[pair] = counts.get(pair, 0) + 1
+    return counts
 
 
 def generate_missing_fixtures(
@@ -21,28 +36,28 @@ def generate_missing_fixtures(
     new_participant_id: uuid.UUID,
     participant_type: ParticipantType,
     existing_participant_ids: list[uuid.UUID],
+    matches_per_pair: int = 1,
 ) -> list[Match]:
-    """Create matches only for pairings that do not already exist."""
-    existing = _existing_pairs(db, group.id)
+    """Create scheduled matches until each pairing reaches matches_per_pair."""
+    pair_counts = _pair_match_counts(db, group.id)
     created: list[Match] = []
 
     for other_id in existing_participant_ids:
         if other_id == new_participant_id:
             continue
         pair = normalize_pair(new_participant_id, other_id)
-        if pair in existing:
-            continue
-        match = Match(
-            category_id=group.category_id,
-            group_id=group.id,
-            participant1_id=pair[0],
-            participant2_id=pair[1],
-            participant_type=participant_type,
-            status=MatchStatus.SCHEDULED,
-        )
-        db.add(match)
-        created.append(match)
-        existing.add(pair)
+        while pair_counts.get(pair, 0) < matches_per_pair:
+            match = Match(
+                category_id=group.category_id,
+                group_id=group.id,
+                participant1_id=pair[0],
+                participant2_id=pair[1],
+                participant_type=participant_type,
+                status=MatchStatus.SCHEDULED,
+            )
+            db.add(match)
+            created.append(match)
+            pair_counts[pair] = pair_counts.get(pair, 0) + 1
 
     return created
 

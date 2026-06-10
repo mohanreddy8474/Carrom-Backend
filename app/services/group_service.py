@@ -100,7 +100,12 @@ def add_player(
     db.flush()
 
     fixture_service.generate_missing_fixtures(
-        db, group, data.player_id, ParticipantType.PLAYER, other_ids
+        db,
+        group,
+        data.player_id,
+        ParticipantType.PLAYER,
+        other_ids,
+        matches_per_pair=fixture_service.matches_per_pair_for_category(category),
     )
     db.commit()
     db.refresh(assignment)

@@ -22,6 +22,7 @@ def clear_all(db: Session) -> None:
 
 
 def _add_player(db: Session, group: Group, player_id, position: int) -> GroupPlayer:
+    category = db.query(Category).filter(Category.id == group.category_id).first()
     other_ids = [
         gp.player_id
         for gp in db.query(GroupPlayer).filter(GroupPlayer.group_id == group.id).all()
@@ -31,8 +32,16 @@ def _add_player(db: Session, group: Group, player_id, position: int) -> GroupPla
     )
     db.add(assignment)
     db.flush()
+    matches_per_pair = (
+        fixture_service.matches_per_pair_for_category(category) if category else 1
+    )
     fixture_service.generate_missing_fixtures(
-        db, group, player_id, ParticipantType.PLAYER, other_ids
+        db,
+        group,
+        player_id,
+        ParticipantType.PLAYER,
+        other_ids,
+        matches_per_pair=matches_per_pair,
     )
     return assignment
 
