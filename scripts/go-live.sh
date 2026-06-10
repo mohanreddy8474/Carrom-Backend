@@ -50,7 +50,7 @@ fi
 echo ""
 
 # ── 4. GitHub Actions ────────────────────────────────────────────────────────
-echo "Step 4: GitHub Actions (repo: mohanreddy8474/Carrom-Backend)"
+echo "Step 4: GitHub Actions (repo: thoughtworks-carrom/Carrom-Tournament)"
 echo "  Settings → Secrets and variables → Actions:"
 echo "    Variable  VITE_SUPABASE_URL      = https://YOUR_PROJECT.supabase.co"
 echo "    Secret    VITE_SUPABASE_ANON_KEY = (anon key from Supabase → Settings → API)"
@@ -61,8 +61,8 @@ if command -v gh &>/dev/null; then
     read -r -p "  VITE_SUPABASE_URL: " sb_url
     read -r -s -p "  VITE_SUPABASE_ANON_KEY: " sb_key
     echo ""
-    gh variable set VITE_SUPABASE_URL --body "$sb_url" -R mohanreddy8474/Carrom-Backend
-    gh secret set VITE_SUPABASE_ANON_KEY --body "$sb_key" -R mohanreddy8474/Carrom-Backend
+    gh variable set VITE_SUPABASE_URL --body "$sb_url" -R thoughtworks-carrom/Carrom-Tournament
+    gh secret set VITE_SUPABASE_ANON_KEY --body "$sb_key" -R thoughtworks-carrom/Carrom-Tournament
     echo "  GitHub env configured."
   fi
 else
@@ -75,7 +75,7 @@ echo "Step 5: Deploy"
 echo "  Push to main (frontend/ changes), or run workflow manually:"
 echo "    GitHub → Actions → Deploy frontend to GitHub Pages → Run workflow"
 echo ""
-echo "  Live URL: https://mohanreddy8474.github.io/Carrom-Backend/"
+echo "  Live URL: https://thoughtworks-carrom.github.io/Carrom-Tournament/"
 echo ""
 echo "Step 6: Verify — standings load, admin login, match update, gallery upload"
 echo "=== Done ==="

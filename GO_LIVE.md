@@ -2,7 +2,7 @@
 
 Production stack: **GitHub Pages** (frontend) + **Supabase** (database, auth, gallery). No FastAPI server required.
 
-Live URL: **https://mohanreddy8474.github.io/Carrom-Backend/**
+Live URL: **https://thoughtworks-carrom.github.io/Carrom-Tournament/**
 
 Run the interactive helper:
 
