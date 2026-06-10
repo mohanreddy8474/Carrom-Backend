@@ -900,14 +900,12 @@ function RankBadge({ rank }: { rank: number }) {
 function Navbar({
   dark,
   toggleTheme,
-  adminMode,
   toggleAdmin,
   menuOpen,
   setMenuOpen,
 }: {
   dark: boolean;
   toggleTheme: () => void;
-  adminMode: boolean;
   toggleAdmin: () => void;
   menuOpen: boolean;
   setMenuOpen: (v: boolean) => void;
@@ -2733,7 +2731,6 @@ export default function App() {
       <Navbar
         dark={dark}
         toggleTheme={() => setDark((d) => !d)}
-        adminMode={adminMode}
         toggleAdmin={handleAdminToggle}
         menuOpen={menuOpen}
         setMenuOpen={setMenuOpen}
