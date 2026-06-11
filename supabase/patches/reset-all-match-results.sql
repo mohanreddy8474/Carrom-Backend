@@ -1,5 +1,4 @@
--- Run once on existing Supabase projects to allow match resets (app + Table Editor).
--- After this, use "Reset match" in the app or run reset_all_match_results() as admin.
+-- Run this entire file in Supabase SQL Editor (fixes trigger + resets all test scores).
 
 CREATE OR REPLACE FUNCTION public.validate_match_update()
 RETURNS trigger
@@ -8,7 +7,7 @@ AS $$
 DECLARE
   v_new_status match_status;
 BEGIN
-  -- Reset path: SCHEDULED with no winner/score (app reset, bulk SQL, or Table Editor)
+  -- Reset: SCHEDULED with cleared winner/score (must run before other checks)
   IF NEW.status = 'SCHEDULED'
      AND NEW.winner_participant_id IS NULL
      AND NEW.winner_score IS NULL THEN
@@ -46,32 +45,11 @@ BEGIN
 END;
 $$;
 
--- Bulk revert: all LIVE/COMPLETED matches → SCHEDULED (admin only, callable from app)
-CREATE OR REPLACE FUNCTION public.reset_all_match_results()
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  n integer;
-BEGIN
-  IF NOT is_admin() THEN
-    RAISE EXCEPTION 'Admin only';
-  END IF;
-
-  UPDATE matches
-  SET status = 'SCHEDULED',
-      winner_participant_id = NULL,
-      winner_score = NULL,
-      updated_at = now()
-  WHERE status IN ('COMPLETED', 'LIVE')
-     OR winner_participant_id IS NOT NULL
-     OR winner_score IS NOT NULL;
-
-  GET DIAGNOSTICS n = ROW_COUNT;
-  RETURN n;
-END;
-$$;
-
-GRANT EXECUTE ON FUNCTION public.reset_all_match_results() TO authenticated;
+UPDATE matches
+SET status = 'SCHEDULED',
+    winner_participant_id = NULL,
+    winner_score = NULL,
+    updated_at = now()
+WHERE status IN ('COMPLETED', 'LIVE')
+   OR winner_participant_id IS NOT NULL
+   OR winner_score IS NOT NULL;

@@ -367,6 +367,13 @@ AS $$
 DECLARE
   v_new_status match_status;
 BEGIN
+  IF NEW.status = 'SCHEDULED'
+     AND NEW.winner_participant_id IS NULL
+     AND NEW.winner_score IS NULL THEN
+    NEW.updated_at := now();
+    RETURN NEW;
+  END IF;
+
   IF OLD.status = 'COMPLETED' AND NEW.status = 'COMPLETED' THEN
     IF NEW.winner_participant_id IS DISTINCT FROM OLD.winner_participant_id
        OR NEW.winner_score IS DISTINCT FROM OLD.winner_score THEN
@@ -402,6 +409,35 @@ CREATE TRIGGER validate_match
   BEFORE UPDATE ON matches
   FOR EACH ROW
   EXECUTE FUNCTION validate_match_update();
+
+CREATE OR REPLACE FUNCTION public.reset_all_match_results()
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  n integer;
+BEGIN
+  IF NOT is_admin() THEN
+    RAISE EXCEPTION 'Admin only';
+  END IF;
+
+  UPDATE matches
+  SET status = 'SCHEDULED',
+      winner_participant_id = NULL,
+      winner_score = NULL,
+      updated_at = now()
+  WHERE status IN ('COMPLETED', 'LIVE')
+     OR winner_participant_id IS NOT NULL
+     OR winner_score IS NOT NULL;
+
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.reset_all_match_results() TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security

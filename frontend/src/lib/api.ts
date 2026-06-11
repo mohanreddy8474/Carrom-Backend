@@ -36,7 +36,9 @@ export const api = {
   getGroupPlayers: client.getGroupPlayers,
   getGroupTeams: client.getGroupTeams,
   deactivatePlayer: client.deactivatePlayer,
+  reactivatePlayer: client.reactivatePlayer,
   deactivateTeam: client.deactivateTeam,
+  reactivateTeam: client.reactivateTeam,
   deleteGroup: client.deleteGroup,
   removePlayerFromGroup: client.removePlayerFromGroup,
   removeTeamFromGroup: client.removeTeamFromGroup,
@@ -46,6 +48,7 @@ export const api = {
   uploadGalleryImage: client.uploadGalleryImage,
   deleteGalleryImage: client.deleteGalleryImage,
   seedTournamentData: client.seedTournamentData,
+  resetAllMatchResults: client.resetAllMatchResults,
 };
 
 export function galleryImageUrl(urlPath: string) {

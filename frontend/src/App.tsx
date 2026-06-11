@@ -1468,7 +1468,7 @@ function AdminBanner({
   onLogout,
 }: {
   adminMode: boolean;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
 }) {
   if (!adminMode) return null;
   return (
@@ -1479,7 +1479,11 @@ function AdminBanner({
     >
       <Edit3 className="w-4 h-4" />
       Admin Mode — changes sync to database
-      <button onClick={onLogout} className="underline text-xs opacity-90">
+      <button
+        type="button"
+        onClick={() => void onLogout()}
+        className="underline text-xs opacity-90 hover:opacity-100"
+      >
         Logout
       </button>
     </motion.div>
@@ -1635,8 +1639,11 @@ function AdminPanel({
     { assignmentId: string; label: string; type: "player" | "team" }[]
   >([]);
   const [deactivatePlayerId, setDeactivatePlayerId] = useState("");
+  const [reactivatePlayerId, setReactivatePlayerId] = useState("");
   const [deactivateTeamCategoryId, setDeactivateTeamCategoryId] = useState("");
   const [deactivateTeamId, setDeactivateTeamId] = useState("");
+  const [reactivateTeamCategoryId, setReactivateTeamCategoryId] = useState("");
+  const [reactivateTeamId, setReactivateTeamId] = useState("");
   const [deleteGroupCategoryId, setDeleteGroupCategoryId] = useState("");
   const [deleteGroupId, setDeleteGroupId] = useState("");
 
@@ -1688,6 +1695,7 @@ function AdminPanel({
   }, [manageGroupId, manageCategoryId, categories, players, teams]);
 
   const activePlayers = players.filter((p) => p.is_active);
+  const inactivePlayers = players.filter((p) => !p.is_active);
   const singlesCategories = categories.filter((c) => c.format === "SINGLES");
   const doublesCategories = categories.filter((c) => c.format === "DOUBLES");
 
@@ -2129,6 +2137,38 @@ function AdminPanel({
               Deactivate Player
             </button>
 
+            {inactivePlayers.length > 0 && (
+              <>
+                <p className="text-sm font-medium pt-2">Reactivate player</p>
+                <select
+                  value={reactivatePlayerId}
+                  onChange={(e) => setReactivatePlayerId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg glass"
+                >
+                  <option value="">Select inactive player</option>
+                  {inactivePlayers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() =>
+                    runAction(
+                      () => api.reactivatePlayer(reactivatePlayerId),
+                      "Player reactivated",
+                      () => setReactivatePlayerId(""),
+                    )
+                  }
+                  disabled={!reactivatePlayerId}
+                  className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm disabled:opacity-50"
+                >
+                  Reactivate Player
+                </button>
+              </>
+            )}
+
             <p className="text-sm font-medium pt-2">Deactivate doubles team</p>
             <select
               value={deactivateTeamCategoryId}
@@ -2178,6 +2218,59 @@ function AdminPanel({
             >
               Deactivate Team
             </button>
+
+            {teams.some((t) => !t.is_active) && (
+              <>
+                <p className="text-sm font-medium pt-2">Reactivate doubles team</p>
+                <select
+                  value={reactivateTeamCategoryId}
+                  onChange={(e) => {
+                    setReactivateTeamCategoryId(e.target.value);
+                    setReactivateTeamId("");
+                  }}
+                  className="w-full px-3 py-2 rounded-lg glass"
+                >
+                  <option value="">Select category</option>
+                  {doublesCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={reactivateTeamId}
+                  onChange={(e) => setReactivateTeamId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg glass"
+                  disabled={!reactivateTeamCategoryId}
+                >
+                  <option value="">Select inactive team</option>
+                  {teams
+                    .filter(
+                      (t) =>
+                        !t.is_active && t.category_id === reactivateTeamCategoryId,
+                    )
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.team_name}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() =>
+                    runAction(
+                      () => api.reactivateTeam(reactivateTeamId),
+                      "Team reactivated",
+                      () => setReactivateTeamId(""),
+                    )
+                  }
+                  disabled={!reactivateTeamId}
+                  className="px-4 py-2 rounded-lg bg-accent-teal text-white text-sm disabled:opacity-50"
+                >
+                  Reactivate Team
+                </button>
+              </>
+            )}
           </div>
 
           <div className="space-y-3 md:col-span-2">
@@ -2230,10 +2323,6 @@ function AdminPanel({
                 Delete Group
               </button>
             </div>
-            <p className="text-xs text-slate-500">
-              To reset a match result, use Reset on the match in Standings (admin
-              mode).
-            </p>
           </div>
         </div>
       </div>
@@ -2246,7 +2335,6 @@ function MatchAdminControls({
   groupName,
   categoryName,
   onSave,
-  onReset,
 }: {
   match: GroupMatch;
   groupName: string;
@@ -2259,7 +2347,6 @@ function MatchAdminControls({
       winnerScore?: number;
     },
   ) => Promise<void>;
-  onReset: (match: GroupMatch) => Promise<void>;
 }) {
   const [winnerId, setWinnerId] = useState(
     match.winnerParticipantId || match.participant1Id,
@@ -2309,21 +2396,6 @@ function MatchAdminControls({
         >
           Completed
         </span>
-        <button
-          type="button"
-          onClick={() => {
-            if (
-              window.confirm(
-                "Reset this match to Scheduled and clear the result?",
-              )
-            ) {
-              void onReset(match);
-            }
-          }}
-          className="text-red-600 dark:text-red-400 text-xs font-semibold hover:underline w-fit"
-        >
-          Reset match
-        </button>
       </div>
     );
   }
@@ -2464,7 +2536,6 @@ function CategoryTournamentSection({
   adminMode,
   search,
   onMatchUpdate,
-  onMatchReset,
 }: {
   data: CategoryData[];
   categories: string[];
@@ -2480,7 +2551,6 @@ function CategoryTournamentSection({
       winnerScore?: number;
     },
   ) => Promise<void>;
-  onMatchReset: (matchId: string) => Promise<void>;
 }) {
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const categoryData = data.find((d) => d.category === activeCategory);
@@ -2536,10 +2606,6 @@ function CategoryTournamentSection({
     },
   ) => {
     await onMatchUpdate(match.id, update);
-  };
-
-  const resetMatch = async (match: GroupMatch) => {
-    await onMatchReset(match.id);
   };
 
   return (
@@ -2710,7 +2776,6 @@ function CategoryTournamentSection({
                               groupName={activeGroup.name}
                               categoryName={activeCategory}
                               onSave={saveMatch}
-                              onReset={resetMatch}
                             />
                           ) : (
                             <span
@@ -3033,15 +3098,21 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     isAdmin().then((ok) => {
-      if (!cancelled && ok) setAdminMode(true);
+      if (!cancelled) setAdminMode(ok);
     });
 
     if (supabase) {
       const {
         data: { subscription },
-      } = supabase.auth.onAuthStateChange(async () => {
-        const ok = await isAdmin();
-        setAdminMode(ok);
+      } = supabase.auth.onAuthStateChange((event, session) => {
+        if (cancelled) return;
+        if (event === "SIGNED_OUT" || !session) {
+          setAdminMode(false);
+          return;
+        }
+        void isAdmin().then((ok) => {
+          if (!cancelled) setAdminMode(ok);
+        });
       });
       return () => {
         cancelled = true;
@@ -3123,10 +3194,19 @@ export default function App() {
     scrollTo("standings");
   };
 
+  const handleAdminLogout = async () => {
+    try {
+      await signOutAdmin();
+    } catch (e) {
+      console.error("Admin logout failed:", e);
+    } finally {
+      setAdminMode(false);
+    }
+  };
+
   const handleAdminToggle = async () => {
     if (adminMode) {
-      await signOutAdmin();
-      setAdminMode(false);
+      await handleAdminLogout();
       return;
     }
     if (await isAdmin()) {
@@ -3173,23 +3253,6 @@ export default function App() {
     }
   };
 
-  const handleMatchReset = async (matchId: string) => {
-    setTournament((prev) =>
-      patchMatchInTournament(prev, matchId, {
-        status: "Scheduled",
-        winnerParticipantId: null,
-        winnerScore: null,
-      }),
-    );
-    try {
-      await api.resetMatch(matchId);
-      await loadTournament(true);
-    } catch (e) {
-      await loadTournament(true);
-      throw e;
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50/80 via-white to-teal-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
       <ComingSoonBanner />
@@ -3200,13 +3263,7 @@ export default function App() {
         menuOpen={menuOpen}
         setMenuOpen={setMenuOpen}
       />
-      <AdminBanner
-        adminMode={adminMode}
-        onLogout={async () => {
-          await signOutAdmin();
-          setAdminMode(false);
-        }}
-      />
+      <AdminBanner adminMode={adminMode} onLogout={handleAdminLogout} />
 
       <Hero countdown={countdown} onViewStandings={() => goToStandings()} />
       <StatsBar
@@ -3254,7 +3311,6 @@ export default function App() {
         adminMode={adminMode}
         search={globalSearch}
         onMatchUpdate={handleMatchUpdate}
-        onMatchReset={handleMatchReset}
       />
       <TournamentInfo />
       <Gallery adminMode={adminMode} />

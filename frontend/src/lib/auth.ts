@@ -36,7 +36,8 @@ export async function signInAdmin(email: string, password: string): Promise<void
 export async function signOutAdmin(): Promise<void> {
   if (useSupabase()) {
     const sb = requireSupabase();
-    await sb.auth.signOut();
+    const { error } = await sb.auth.signOut({ scope: "local" });
+    if (error) throw error;
     return;
   }
   clearAdminKey();

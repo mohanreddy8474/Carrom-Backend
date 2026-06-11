@@ -73,6 +73,8 @@ Do not set `VITE_USE_FASTAPI`.
 - [ ] Admin login (pencil icon → email/password)
 - [ ] Update a match status/score
 - [ ] Upload a gallery image (if upload fails, run `supabase/patches/gallery-storage-fix.sql`)
+- [ ] Reset a completed match (if reset fails, run `supabase/patches/allow-match-reset.sql` once in SQL Editor)
+- [ ] Bulk undo test scores: admin panel → **Reset all match results**, or run `supabase/patches/reset-all-match-results.sql` after the trigger patch
 
 ---
 

@@ -168,6 +168,14 @@ export const supabaseClient = {
     return data as SeedResult;
   },
 
+  resetAllMatchResults: async (): Promise<number> => {
+    const sb = requireSupabase();
+    const { data, error } = await sb.rpc("reset_all_match_results");
+    if (error) sbError(error);
+    invalidateCache();
+    return (data as number) ?? 0;
+  },
+
   getCategories: async (): Promise<ApiCategory[]> => {
     const sb = requireSupabase();
     const { data, error } = await sb.from("categories").select("*").order("name");
@@ -387,11 +395,37 @@ export const supabaseClient = {
     return data as ApiPlayer;
   },
 
+  reactivatePlayer: async (playerId: string): Promise<ApiPlayer> => {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from("players")
+      .update({ is_active: true })
+      .eq("id", playerId)
+      .select()
+      .single();
+    if (error) sbError(error);
+    invalidateCache();
+    return data as ApiPlayer;
+  },
+
   deactivateTeam: async (teamId: string): Promise<ApiTeam> => {
     const sb = requireSupabase();
     const { data, error } = await sb
       .from("teams")
       .update({ is_active: false })
+      .eq("id", teamId)
+      .select()
+      .single();
+    if (error) sbError(error);
+    invalidateCache();
+    return data as ApiTeam;
+  },
+
+  reactivateTeam: async (teamId: string): Promise<ApiTeam> => {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from("teams")
+      .update({ is_active: true })
       .eq("id", teamId)
       .select()
       .single();

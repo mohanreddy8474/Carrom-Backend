@@ -85,8 +85,22 @@ export const fastapiClient = {
   deactivatePlayer: (playerId: string) =>
     request<ApiPlayer>(`/players/${playerId}`, { method: "DELETE" }),
 
+  reactivatePlayer: async (playerId: string) => {
+    return request<ApiPlayer>(`/players/${playerId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: true }),
+    });
+  },
+
   deactivateTeam: (teamId: string) =>
     request<ApiTeam>(`/teams/${teamId}`, { method: "DELETE" }),
+
+  reactivateTeam: async (teamId: string) => {
+    return request<ApiTeam>(`/teams/${teamId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_active: true }),
+    });
+  },
 
   deleteGroup: (groupId: string) =>
     request<void>(`/groups/${groupId}`, { method: "DELETE" }),
@@ -152,6 +166,10 @@ export const fastapiClient = {
     }>(`/admin/seed-tournament-data${force ? "?force=true" : ""}`, {
       method: "POST",
     }),
+
+  resetAllMatchResults: async () => {
+    throw new Error("Reset all matches is only supported with Supabase");
+  },
 };
 
 export function fastapiGalleryImageUrl(urlPath: string) {
