@@ -75,6 +75,82 @@ const GALLERY_PREVIEW_COUNT = 6;
 const GALLERY_DRIVE_URL =
   "https://drive.google.com/drive/folders/1gDyLrI_1D53idcBKC6_07w4yqf5_cz4T?usp=sharing";
 
+function collectLiveMatches(data: CategoryData[]) {
+  const results: { match: GroupMatch; group: string; category: string }[] = [];
+  for (const cat of data) {
+    for (const group of cat.groups) {
+      for (const match of group.matches) {
+        if (match.status === "Live") {
+          results.push({ match, group: group.name, category: cat.category });
+        }
+      }
+    }
+  }
+  return results;
+}
+
+function patchMatchInTournament(
+  data: CategoryData[],
+  matchId: string,
+  update: {
+    status?: MatchStatus;
+    winnerParticipantId?: string | null;
+    winnerScore?: number | null;
+  },
+): CategoryData[] {
+  return data.map((cat) => ({
+    ...cat,
+    groups: cat.groups.map((grp) => ({
+      ...grp,
+      matches: grp.matches.map((m) =>
+        m.id === matchId ? { ...m, ...update } : m,
+      ),
+    })),
+  }));
+}
+
+function LiveMatchesBanner({
+  matches,
+}: {
+  matches: { match: GroupMatch; group: string; category: string }[];
+}) {
+  if (matches.length === 0) return null;
+
+  return (
+    <motion.div
+      id="live-matches"
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="mb-8 p-6 rounded-2xl border-2 border-red-500/50 bg-red-500/10 dark:bg-red-500/20 relative overflow-hidden"
+    >
+      <div className="absolute top-0 right-0 px-4 py-1 bg-red-500 text-white text-xs font-bold rounded-bl-xl flex items-center gap-1">
+        <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+        LIVE
+      </div>
+      <h3 className="font-display text-lg font-bold mb-4">Live Matches</h3>
+      <ul className="space-y-3">
+        {matches.map(({ match, group, category }) => (
+          <li
+            key={match.id}
+            className="p-4 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-red-500/20"
+          >
+            <p className="text-xl font-bold">
+              {match.playerA}{" "}
+              <span className="text-red-500 mx-2">vs</span> {match.playerB}
+            </p>
+            <p className="text-sm text-slate-500 mt-1">
+              {group} · {category}
+            </p>
+            <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-bold bg-red-500 text-white animate-pulse">
+              Live
+            </span>
+          </li>
+        ))}
+      </ul>
+    </motion.div>
+  );
+}
+
 
 const RULES_CATEGORIES = [
   {
@@ -2192,6 +2268,17 @@ function MatchAdminControls({
     String(match.winnerScore ?? ""),
   );
 
+  useEffect(() => {
+    setWinnerId(match.winnerParticipantId || match.participant1Id);
+    setWinnerScore(String(match.winnerScore ?? ""));
+  }, [
+    match.id,
+    match.status,
+    match.winnerParticipantId,
+    match.winnerScore,
+    match.participant1Id,
+  ]);
+
   const resetMatchForm = () => {
     setWinnerId(match.participant1Id);
     setWinnerScore("");
@@ -2202,13 +2289,9 @@ function MatchAdminControls({
     winnerParticipantId?: string;
     winnerScore?: number;
   }) => {
-    try {
-      await onSave(match, update);
-      if (update.status === "Completed") {
-        resetMatchForm();
-      }
-    } catch {
-      // Keep form values when the API call fails.
+    await onSave(match, update);
+    if (update.status === "Completed") {
+      resetMatchForm();
     }
   };
 
@@ -2409,21 +2492,6 @@ function CategoryTournamentSection({
       "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300",
   };
 
-  const liveMatches = useMemo(() => {
-    const results: { match: GroupMatch; group: string; category: string }[] =
-      [];
-    for (const cat of data) {
-      for (const group of cat.groups) {
-        for (const match of group.matches) {
-          if (match.status === "Live") {
-            results.push({ match, group: group.name, category: cat.category });
-          }
-        }
-      }
-    }
-    return results;
-  }, [data]);
-
   const filteredGroups = useMemo(() => {
     if (!categoryData) return [];
     const q = search.toLowerCase().trim();
@@ -2498,45 +2566,6 @@ function CategoryTournamentSection({
             active={activeGroupId}
             onChange={setActiveGroupId}
           />
-        )}
-
-        {liveMatches.length > 0 && (
-          <motion.div
-            id="live-matches"
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mb-8 p-6 rounded-2xl border-2 border-red-500/50 bg-red-500/10 dark:bg-red-500/20 relative overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 px-4 py-1 bg-red-500 text-white text-xs font-bold rounded-bl-xl flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-              LIVE
-            </div>
-            <h3 className="font-display text-lg font-bold mb-4">
-              Live Matches
-            </h3>
-            <ul className="space-y-3">
-              {liveMatches.map(({ match, group, category }) => (
-                <li
-                  key={match.id}
-                  className="p-4 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-red-500/20"
-                >
-                  <p className="text-xl font-bold">
-                    {match.playerA}{" "}
-                    <span className="text-red-500 mx-2">vs</span>{" "}
-                    {match.playerB}
-                  </p>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {group} · {category}
-                  </p>
-                  <span
-                    className={`inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-bold ${statusColors.Live}`}
-                  >
-                    Live
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </motion.div>
         )}
 
         {activeGroup && (
@@ -3025,8 +3054,8 @@ export default function App() {
     };
   }, []);
 
-  const loadTournament = useCallback(async () => {
-    setLoading(true);
+  const loadTournament = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const data = await fetchTournamentData();
       setTournament(data.tournament);
@@ -3044,7 +3073,7 @@ export default function App() {
         e instanceof Error ? e.message : "Failed to load tournament data",
       );
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }, []);
 
@@ -3084,6 +3113,10 @@ export default function App() {
       ),
     [tournament],
   );
+  const liveMatches = useMemo(
+    () => collectLiveMatches(displayTournament),
+    [displayTournament],
+  );
 
   const goToStandings = (category?: Category) => {
     if (category) setActiveCategory(category);
@@ -3111,17 +3144,50 @@ export default function App() {
       winnerScore?: number;
     },
   ) => {
-    await api.updateMatch(matchId, {
-      status: update.status ? toApiStatus(update.status) : undefined,
-      winner_participant_id: update.winnerParticipantId,
-      winner_score: update.winnerScore,
-    });
-    await loadTournament();
+    setTournament((prev) =>
+      patchMatchInTournament(prev, matchId, {
+        status: update.status,
+        winnerParticipantId: update.winnerParticipantId,
+        winnerScore: update.winnerScore,
+      }),
+    );
+
+    try {
+      await api.updateMatch(matchId, {
+        status: update.status ? toApiStatus(update.status) : undefined,
+        winner_participant_id: update.winnerParticipantId,
+        winner_score: update.winnerScore,
+      });
+      await loadTournament(true);
+
+      if (update.status === "Live") {
+        requestAnimationFrame(() => {
+          document
+            .getElementById("live-matches")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
+    } catch (e) {
+      await loadTournament(true);
+      throw e;
+    }
   };
 
   const handleMatchReset = async (matchId: string) => {
-    await api.resetMatch(matchId);
-    await loadTournament();
+    setTournament((prev) =>
+      patchMatchInTournament(prev, matchId, {
+        status: "Scheduled",
+        winnerParticipantId: null,
+        winnerScore: null,
+      }),
+    );
+    try {
+      await api.resetMatch(matchId);
+      await loadTournament(true);
+    } catch (e) {
+      await loadTournament(true);
+      throw e;
+    }
   };
 
   return (
@@ -3174,6 +3240,10 @@ export default function App() {
             onRefresh={loadTournament}
           />
         )}
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <LiveMatchesBanner matches={liveMatches} />
       </div>
 
       <CategoryTournamentSection
