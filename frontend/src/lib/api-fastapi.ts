@@ -7,6 +7,8 @@ import type {
   ApiCategory,
   ApiGalleryImage,
   ApiGroup,
+  ApiGroupPlayer,
+  ApiGroupTeam,
   ApiMatch,
   ApiPlayer,
   ApiStanding,
@@ -72,6 +74,37 @@ export const fastapiClient = {
     request(`/groups/${groupId}/teams`, {
       method: "POST",
       body: JSON.stringify({ team_id: teamId }),
+    }),
+
+  getGroupPlayers: (groupId: string) =>
+    request<ApiGroupPlayer[]>(`/groups/${groupId}/players`),
+
+  getGroupTeams: (groupId: string) =>
+    request<ApiGroupTeam[]>(`/groups/${groupId}/teams`),
+
+  deactivatePlayer: (playerId: string) =>
+    request<ApiPlayer>(`/players/${playerId}`, { method: "DELETE" }),
+
+  deactivateTeam: (teamId: string) =>
+    request<ApiTeam>(`/teams/${teamId}`, { method: "DELETE" }),
+
+  deleteGroup: (groupId: string) =>
+    request<void>(`/groups/${groupId}`, { method: "DELETE" }),
+
+  removePlayerFromGroup: (groupId: string, assignmentId: string) =>
+    request<void>(`/groups/${groupId}/players/${assignmentId}`, { method: "DELETE" }),
+
+  removeTeamFromGroup: (groupId: string, assignmentId: string) =>
+    request<void>(`/groups/${groupId}/teams/${assignmentId}`, { method: "DELETE" }),
+
+  resetMatch: (matchId: string) =>
+    request<ApiMatch>(`/matches/${matchId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "SCHEDULED",
+        winner_participant_id: null,
+        winner_score: null,
+      }),
     }),
 
   updateMatch: (

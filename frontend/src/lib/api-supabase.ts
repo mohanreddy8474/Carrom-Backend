@@ -4,6 +4,8 @@ import type {
   ApiCategory,
   ApiGalleryImage,
   ApiGroup,
+  ApiGroupPlayer,
+  ApiGroupTeam,
   ApiMatch,
   ApiPlayer,
   ApiStanding,
@@ -22,6 +24,34 @@ const ALLOWED_TYPES = new Set([
   "image/webp",
   "image/gif",
 ]);
+
+const EXT_TO_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+
+function inferImageContentType(file: File): string | null {
+  if (file.type && ALLOWED_TYPES.has(file.type)) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const fromExt = EXT_TO_MIME[ext];
+  return fromExt && ALLOWED_TYPES.has(fromExt) ? fromExt : null;
+}
+
+async function requireAdminSession() {
+  const sb = requireSupabase();
+  const {
+    data: { session },
+    error,
+  } = await sb.auth.getSession();
+  if (error) sbError(error);
+  if (!session) {
+    throw new Error("Sign in as admin to upload or delete gallery photos");
+  }
+  return sb;
+}
 
 function sbError(error: { message: string } | null): never {
   throw new Error(error?.message ?? "Request failed");
@@ -59,6 +89,22 @@ function teamMap(teams: ApiTeam[]) {
 function invalidateCache() {
   cachedPlayers = null;
   cachedTeams = null;
+}
+
+async function deleteScheduledMatchesForParticipant(
+  groupId: string,
+  participantId: string,
+) {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from("matches")
+    .delete()
+    .eq("group_id", groupId)
+    .eq("status", "SCHEDULED")
+    .or(
+      `participant1_id.eq.${participantId},participant2_id.eq.${participantId}`,
+    );
+  if (error) sbError(error);
 }
 
 async function validateDoublesTeam(
@@ -306,6 +352,118 @@ export const supabaseClient = {
     if (error) sbError(error);
   },
 
+  getGroupPlayers: async (groupId: string): Promise<ApiGroupPlayer[]> => {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from("group_players")
+      .select("id, group_id, player_id, group_position")
+      .eq("group_id", groupId)
+      .order("group_position", { ascending: true, nullsFirst: false });
+    if (error) sbError(error);
+    return (data ?? []) as ApiGroupPlayer[];
+  },
+
+  getGroupTeams: async (groupId: string): Promise<ApiGroupTeam[]> => {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from("group_teams")
+      .select("id, group_id, team_id, group_position")
+      .eq("group_id", groupId)
+      .order("group_position", { ascending: true, nullsFirst: false });
+    if (error) sbError(error);
+    return (data ?? []) as ApiGroupTeam[];
+  },
+
+  deactivatePlayer: async (playerId: string): Promise<ApiPlayer> => {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from("players")
+      .update({ is_active: false })
+      .eq("id", playerId)
+      .select()
+      .single();
+    if (error) sbError(error);
+    invalidateCache();
+    return data as ApiPlayer;
+  },
+
+  deactivateTeam: async (teamId: string): Promise<ApiTeam> => {
+    const sb = requireSupabase();
+    const { data, error } = await sb
+      .from("teams")
+      .update({ is_active: false })
+      .eq("id", teamId)
+      .select()
+      .single();
+    if (error) sbError(error);
+    invalidateCache();
+    return data as ApiTeam;
+  },
+
+  deleteGroup: async (groupId: string) => {
+    const sb = requireSupabase();
+    const { error } = await sb.from("groups").delete().eq("id", groupId);
+    if (error) sbError(error);
+  },
+
+  removePlayerFromGroup: async (groupId: string, assignmentId: string) => {
+    const sb = requireSupabase();
+    const { data: row, error: fetchError } = await sb
+      .from("group_players")
+      .select("player_id")
+      .eq("id", assignmentId)
+      .eq("group_id", groupId)
+      .single();
+    if (fetchError) sbError(fetchError);
+
+    await deleteScheduledMatchesForParticipant(groupId, row.player_id as string);
+
+    const { error } = await sb
+      .from("group_players")
+      .delete()
+      .eq("id", assignmentId)
+      .eq("group_id", groupId);
+    if (error) sbError(error);
+  },
+
+  removeTeamFromGroup: async (groupId: string, assignmentId: string) => {
+    const sb = requireSupabase();
+    const { data: row, error: fetchError } = await sb
+      .from("group_teams")
+      .select("team_id")
+      .eq("id", assignmentId)
+      .eq("group_id", groupId)
+      .single();
+    if (fetchError) sbError(fetchError);
+
+    await deleteScheduledMatchesForParticipant(groupId, row.team_id as string);
+
+    const { error } = await sb
+      .from("group_teams")
+      .delete()
+      .eq("id", assignmentId)
+      .eq("group_id", groupId);
+    if (error) sbError(error);
+  },
+
+  resetMatch: async (matchId: string): Promise<ApiMatch> => {
+    const sb = requireSupabase();
+    const { data: row, error } = await sb
+      .from("matches")
+      .update({
+        status: "SCHEDULED",
+        winner_participant_id: null,
+        winner_score: null,
+      })
+      .eq("id", matchId)
+      .select()
+      .single();
+    if (error) sbError(error);
+
+    const [players, teams] = await Promise.all([loadPlayers(), loadTeams()]);
+    return enrichMatch(row as ApiMatch, playerMap(players), teamMap(teams));
+  },
+
   updateMatch: async (
     matchId: string,
     data: {
@@ -352,21 +510,32 @@ export const supabaseClient = {
   },
 
   uploadGalleryImage: async (file: File): Promise<ApiGalleryImage> => {
-    if (!ALLOWED_TYPES.has(file.type)) {
+    const contentType = inferImageContentType(file);
+    if (!contentType) {
       throw new Error("Only JPEG, PNG, WebP, and GIF images are allowed");
     }
     if (file.size > MAX_UPLOAD_BYTES) {
       throw new Error("Image must be 5 MB or smaller");
     }
 
-    const sb = requireSupabase();
-    const ext = file.name.split(".").pop() ?? "jpg";
+    const sb = await requireAdminSession();
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
     const storagePath = `${crypto.randomUUID()}.${ext}`;
 
     const { error: uploadError } = await sb.storage
       .from(GALLERY_BUCKET)
-      .upload(storagePath, file, { contentType: file.type, upsert: false });
-    if (uploadError) sbError(uploadError);
+      .upload(storagePath, file, {
+        contentType,
+        cacheControl: "3600",
+        upsert: false,
+      });
+    if (uploadError) {
+      throw new Error(
+        uploadError.message.includes("row-level security")
+          ? "Upload denied — sign in as admin and ensure gallery storage policies are set up (see supabase/patches/gallery-storage-fix.sql)"
+          : uploadError.message,
+      );
+    }
 
     const { data: row, error } = await sb
       .from("gallery_images")
@@ -392,7 +561,7 @@ export const supabaseClient = {
   },
 
   deleteGalleryImage: async (imageId: string) => {
-    const sb = requireSupabase();
+    const sb = await requireAdminSession();
     const { data: row, error: fetchError } = await sb
       .from("gallery_images")
       .select("storage_path")

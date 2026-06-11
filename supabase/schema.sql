@@ -367,7 +367,7 @@ AS $$
 DECLARE
   v_new_status match_status;
 BEGIN
-  IF OLD.status = 'COMPLETED' THEN
+  IF OLD.status = 'COMPLETED' AND NEW.status = 'COMPLETED' THEN
     IF NEW.winner_participant_id IS DISTINCT FROM OLD.winner_participant_id
        OR NEW.winner_score IS DISTINCT FROM OLD.winner_score THEN
       RAISE EXCEPTION 'Winner information cannot be modified for completed matches';
@@ -442,9 +442,23 @@ CREATE POLICY "admin_read_admins" ON admins FOR SELECT USING (is_admin());
 -- ---------------------------------------------------------------------------
 -- Storage bucket for gallery
 -- ---------------------------------------------------------------------------
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('gallery', 'gallery', true)
-ON CONFLICT (id) DO UPDATE SET public = true;
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'gallery',
+  'gallery',
+  true,
+  5242880,
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']::text[]
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = true,
+  file_size_limit = 5242880,
+  allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']::text[];
+
+DROP POLICY IF EXISTS "gallery_public_read" ON storage.objects;
+DROP POLICY IF EXISTS "gallery_admin_insert" ON storage.objects;
+DROP POLICY IF EXISTS "gallery_admin_delete" ON storage.objects;
+DROP POLICY IF EXISTS "gallery_admin_update" ON storage.objects;
 
 CREATE POLICY "gallery_public_read"
   ON storage.objects FOR SELECT
@@ -452,12 +466,15 @@ CREATE POLICY "gallery_public_read"
 
 CREATE POLICY "gallery_admin_insert"
   ON storage.objects FOR INSERT
+  TO authenticated
   WITH CHECK (bucket_id = 'gallery' AND is_admin());
 
 CREATE POLICY "gallery_admin_delete"
   ON storage.objects FOR DELETE
+  TO authenticated
   USING (bucket_id = 'gallery' AND is_admin());
 
 CREATE POLICY "gallery_admin_update"
   ON storage.objects FOR UPDATE
+  TO authenticated
   USING (bucket_id = 'gallery' AND is_admin());
