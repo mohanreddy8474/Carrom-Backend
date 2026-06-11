@@ -173,7 +173,7 @@ const RULES_CATEGORIES = [
       "Covering the Queen: Once the Queen is pocketed, it must be 'covered' by pocketing one of the player's own coins on the immediate subsequent shot.",
       "Failure to Cover: If the player fails to cover the Queen on the next shot, the Queen is returned to the center circle, and the turn ends.",
       "Simultaneous Pocketing: If a player pockets the Queen and one of their own coins in the same strike, the Queen is automatically covered.",
-      "The Final Piece Rule: A player cannot pocket their last remaining coin before the Queen has been covered.",
+      "The Final Piece Rule: A player cannot pocket their last remaining coin before the queen has been covered",
     ],
   },
   {
