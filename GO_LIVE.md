@@ -72,7 +72,7 @@ Do not set `VITE_USE_FASTAPI`.
 - [ ] Global search finds a player
 - [ ] Admin login (pencil icon → email/password)
 - [ ] Update a match status/score
-- [ ] Upload a gallery image (if upload fails, run `supabase/patches/gallery-storage-fix.sql`)
+- [ ] Upload a gallery image
 
 ---
 

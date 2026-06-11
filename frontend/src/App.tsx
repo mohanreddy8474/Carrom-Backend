@@ -27,7 +27,6 @@ import {
   Users,
   X,
   Zap,
-  ExternalLink,
 } from "lucide-react";
 import {
   api,
@@ -70,10 +69,6 @@ const DISPLAY_CATEGORIES = [
   "Men's Doubles",
   "Mixed Doubles",
 ] as const;
-
-const GALLERY_PREVIEW_COUNT = 6;
-const GALLERY_DRIVE_URL =
-  "https://drive.google.com/drive/folders/1gDyLrI_1D53idcBKC6_07w4yqf5_cz4T?usp=sharing";
 
 
 const RULES_CATEGORIES = [
@@ -1553,16 +1548,6 @@ function AdminPanel({
   const [groups, setGroups] = useState<
     { id: string; name: string; category_id: string }[]
   >([]);
-  const [manageCategoryId, setManageCategoryId] = useState("");
-  const [manageGroupId, setManageGroupId] = useState("");
-  const [groupAssignments, setGroupAssignments] = useState<
-    { assignmentId: string; label: string; type: "player" | "team" }[]
-  >([]);
-  const [deactivatePlayerId, setDeactivatePlayerId] = useState("");
-  const [deactivateTeamCategoryId, setDeactivateTeamCategoryId] = useState("");
-  const [deactivateTeamId, setDeactivateTeamId] = useState("");
-  const [deleteGroupCategoryId, setDeleteGroupCategoryId] = useState("");
-  const [deleteGroupId, setDeleteGroupId] = useState("");
 
   useEffect(() => {
     api
@@ -1570,46 +1555,6 @@ function AdminPanel({
       .then(setGroups)
       .catch(() => setGroups([]));
   }, [categories, tournament]);
-
-  useEffect(() => {
-    if (!manageGroupId || !manageCategoryId) {
-      setGroupAssignments([]);
-      return;
-    }
-    const category = categories.find((c) => c.id === manageCategoryId);
-    if (!category) return;
-
-    const load = async () => {
-      try {
-        if (category.format === "SINGLES") {
-          const rows = await api.getGroupPlayers(manageGroupId);
-          setGroupAssignments(
-            rows.map((r) => ({
-              assignmentId: r.id,
-              label:
-                players.find((p) => p.id === r.player_id)?.name ??
-                "Unknown player",
-              type: "player" as const,
-            })),
-          );
-        } else {
-          const rows = await api.getGroupTeams(manageGroupId);
-          setGroupAssignments(
-            rows.map((r) => ({
-              assignmentId: r.id,
-              label:
-                teams.find((t) => t.id === r.team_id)?.team_name ??
-                "Unknown team",
-              type: "team" as const,
-            })),
-          );
-        }
-      } catch {
-        setGroupAssignments([]);
-      }
-    };
-    void load();
-  }, [manageGroupId, manageCategoryId, categories, players, teams]);
 
   const activePlayers = players.filter((p) => p.is_active);
   const singlesCategories = categories.filter((c) => c.format === "SINGLES");
@@ -1703,9 +1648,7 @@ function AdminPanel({
     action: () => Promise<unknown>,
     success: string,
     onSuccess?: () => void,
-    confirmMessage?: string,
   ) => {
-    if (confirmMessage && !window.confirm(confirmMessage)) return;
     setMessage("");
     try {
       await action();
@@ -1949,218 +1892,6 @@ function AdminPanel({
           </button>
         </div>
       </div>
-
-      <div className="border-t border-slate-200 dark:border-slate-700 pt-6 space-y-4">
-        <h4 className="font-semibold text-red-600 dark:text-red-400">
-          Remove &amp; Manage
-        </h4>
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Remove from group</p>
-            <select
-              value={manageCategoryId}
-              onChange={(e) => {
-                setManageCategoryId(e.target.value);
-                setManageGroupId("");
-              }}
-              className="w-full px-3 py-2 rounded-lg glass"
-            >
-              <option value="">Select category</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={manageGroupId}
-              onChange={(e) => setManageGroupId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg glass"
-              disabled={!manageCategoryId}
-            >
-              <option value="">Select group</option>
-              {groupsForCategory(manageCategoryId).map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-            {groupAssignments.length === 0 && manageGroupId && (
-              <p className="text-xs text-slate-500">No members in this group.</p>
-            )}
-            <ul className="space-y-2 max-h-40 overflow-y-auto">
-              {groupAssignments.map((item) => (
-                <li
-                  key={item.assignmentId}
-                  className="flex items-center justify-between gap-2 text-sm glass rounded-lg px-3 py-2"
-                >
-                  <span>{item.label}</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      runAction(
-                        () =>
-                          item.type === "player"
-                            ? api.removePlayerFromGroup(
-                                manageGroupId,
-                                item.assignmentId,
-                              )
-                            : api.removeTeamFromGroup(
-                                manageGroupId,
-                                item.assignmentId,
-                              ),
-                        `Removed ${item.label} from group`,
-                        undefined,
-                        `Remove ${item.label} from this group? Scheduled matches for them will be deleted.`,
-                      )
-                    }
-                    className="text-red-600 dark:text-red-400 text-xs font-semibold hover:underline"
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Deactivate player</p>
-            <select
-              value={deactivatePlayerId}
-              onChange={(e) => setDeactivatePlayerId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg glass"
-            >
-              <option value="">Select player</option>
-              {activePlayers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() =>
-                runAction(
-                  () => api.deactivatePlayer(deactivatePlayerId),
-                  "Player deactivated",
-                  () => setDeactivatePlayerId(""),
-                  "Deactivate this player? They will be hidden from new assignments.",
-                )
-              }
-              disabled={!deactivatePlayerId}
-              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm disabled:opacity-50"
-            >
-              Deactivate Player
-            </button>
-
-            <p className="text-sm font-medium pt-2">Deactivate doubles team</p>
-            <select
-              value={deactivateTeamCategoryId}
-              onChange={(e) => {
-                setDeactivateTeamCategoryId(e.target.value);
-                setDeactivateTeamId("");
-              }}
-              className="w-full px-3 py-2 rounded-lg glass"
-            >
-              <option value="">Select category</option>
-              {doublesCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={deactivateTeamId}
-              onChange={(e) => setDeactivateTeamId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg glass"
-              disabled={!deactivateTeamCategoryId}
-            >
-              <option value="">Select team</option>
-              {teams
-                .filter(
-                  (t) =>
-                    t.is_active && t.category_id === deactivateTeamCategoryId,
-                )
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.team_name}
-                  </option>
-                ))}
-            </select>
-            <button
-              type="button"
-              onClick={() =>
-                runAction(
-                  () => api.deactivateTeam(deactivateTeamId),
-                  "Team deactivated",
-                  () => setDeactivateTeamId(""),
-                  "Deactivate this team?",
-                )
-              }
-              disabled={!deactivateTeamId}
-              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm disabled:opacity-50"
-            >
-              Deactivate Team
-            </button>
-          </div>
-
-          <div className="space-y-3 md:col-span-2">
-            <p className="text-sm font-medium">Delete group</p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <select
-                value={deleteGroupCategoryId}
-                onChange={(e) => {
-                  setDeleteGroupCategoryId(e.target.value);
-                  setDeleteGroupId("");
-                }}
-                className="flex-1 px-3 py-2 rounded-lg glass"
-              >
-                <option value="">Select category</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={deleteGroupId}
-                onChange={(e) => setDeleteGroupId(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-lg glass"
-                disabled={!deleteGroupCategoryId}
-              >
-                <option value="">Select group</option>
-                {groupsForCategory(deleteGroupCategoryId).map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() =>
-                  runAction(
-                    () => api.deleteGroup(deleteGroupId),
-                    "Group deleted",
-                    () => {
-                      setDeleteGroupId("");
-                      setDeleteGroupCategoryId("");
-                    },
-                    "Delete this group and all its matches? This cannot be undone.",
-                  )
-                }
-                disabled={!deleteGroupId}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm disabled:opacity-50 whitespace-nowrap"
-              >
-                Delete Group
-              </button>
-            </div>
-            <p className="text-xs text-slate-500">
-              To reset a match result, use Reset on the match in Standings (admin
-              mode).
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -2170,7 +1901,6 @@ function MatchAdminControls({
   groupName,
   categoryName,
   onSave,
-  onReset,
 }: {
   match: GroupMatch;
   groupName: string;
@@ -2183,7 +1913,6 @@ function MatchAdminControls({
       winnerScore?: number;
     },
   ) => Promise<void>;
-  onReset: (match: GroupMatch) => Promise<void>;
 }) {
   const [winnerId, setWinnerId] = useState(
     match.winnerParticipantId || match.participant1Id,
@@ -2226,21 +1955,6 @@ function MatchAdminControls({
         >
           Completed
         </span>
-        <button
-          type="button"
-          onClick={() => {
-            if (
-              window.confirm(
-                "Reset this match to Scheduled and clear the result?",
-              )
-            ) {
-              void onReset(match);
-            }
-          }}
-          className="text-red-600 dark:text-red-400 text-xs font-semibold hover:underline w-fit"
-        >
-          Reset match
-        </button>
       </div>
     );
   }
@@ -2258,19 +1972,6 @@ function MatchAdminControls({
         <option value="Scheduled">Scheduled</option>
         <option value="Live">Live</option>
       </select>
-      {match.status === "Live" && (
-        <button
-          type="button"
-          onClick={() => {
-            if (window.confirm("Set this match back to Scheduled?")) {
-              void handleSave({ status: "Scheduled" });
-            }
-          }}
-          className="text-red-600 dark:text-red-400 text-xs font-semibold hover:underline w-fit"
-        >
-          End live (Scheduled)
-        </button>
-      )}
       <select
         value={winnerId}
         onChange={(e) => setWinnerId(e.target.value)}
@@ -2381,7 +2082,6 @@ function CategoryTournamentSection({
   adminMode,
   search,
   onMatchUpdate,
-  onMatchReset,
 }: {
   data: CategoryData[];
   categories: string[];
@@ -2397,7 +2097,6 @@ function CategoryTournamentSection({
       winnerScore?: number;
     },
   ) => Promise<void>;
-  onMatchReset: (matchId: string) => Promise<void>;
 }) {
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const categoryData = data.find((d) => d.category === activeCategory);
@@ -2468,10 +2167,6 @@ function CategoryTournamentSection({
     },
   ) => {
     await onMatchUpdate(match.id, update);
-  };
-
-  const resetMatch = async (match: GroupMatch) => {
-    await onMatchReset(match.id);
   };
 
   return (
@@ -2681,7 +2376,6 @@ function CategoryTournamentSection({
                               groupName={activeGroup.name}
                               categoryName={activeCategory}
                               onSave={saveMatch}
-                              onReset={resetMatch}
                             />
                           ) : (
                             <span
@@ -2755,9 +2449,7 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
   const [images, setImages] = useState<ApiGalleryImage[]>([]);
   const [uploading, setUploading] = useState(false);
   const [galleryMessage, setGalleryMessage] = useState("");
-  const [galleryError, setGalleryError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const previewImages = images.slice(0, GALLERY_PREVIEW_COUNT);
 
   const loadImages = useCallback(async () => {
     try {
@@ -2774,14 +2466,12 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
   const handleUpload = async (file: File) => {
     setUploading(true);
     setGalleryMessage("");
-    setGalleryError(false);
     try {
       await api.uploadGalleryImage(file);
       setGalleryMessage("Image uploaded");
       await loadImages();
     } catch (e) {
       setGalleryMessage(e instanceof Error ? e.message : "Upload failed");
-      setGalleryError(true);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -2790,14 +2480,12 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
 
   const handleDelete = async (imageId: string) => {
     setGalleryMessage("");
-    setGalleryError(false);
     try {
       await api.deleteGalleryImage(imageId);
       setGalleryMessage("Image removed");
       await loadImages();
     } catch (e) {
       setGalleryMessage(e instanceof Error ? e.message : "Delete failed");
-      setGalleryError(true);
     }
   };
 
@@ -2837,18 +2525,14 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
               {uploading ? "Uploading..." : "Add Photo"}
             </button>
             {galleryMessage && (
-              <p
-                className={`text-sm ${galleryError ? "text-red-500" : "text-accent-teal"}`}
-              >
-                {galleryMessage}
-              </p>
+              <p className="text-sm text-accent-teal">{galleryMessage}</p>
             )}
           </div>
         )}
 
-        {previewImages.length > 0 ? (
+        {images.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {previewImages.map((image) => (
+            {images.map((image) => (
               <motion.div
                 key={image.id}
                 whileHover={{ scale: 1.02 }}
@@ -2873,7 +2557,7 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {Array.from({ length: Math.min(3, GALLERY_PREVIEW_COUNT) }, (_, i) => (
+            {Array.from({ length: 3 }, (_, i) => (
               <div
                 key={i}
                 className="aspect-square rounded-2xl glass flex flex-col items-center justify-center gap-2 text-slate-400"
@@ -2884,23 +2568,6 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
             ))}
           </div>
         )}
-
-        <div className="mt-8 text-center">
-          {images.length > GALLERY_PREVIEW_COUNT && (
-            <p className="text-sm text-slate-500 mb-3">
-              Showing {GALLERY_PREVIEW_COUNT} of {images.length} photos
-            </p>
-          )}
-          <a
-            href={GALLERY_DRIVE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl glass font-semibold text-sm text-accent-teal hover:bg-accent-teal/10 transition-colors"
-          >
-            <ExternalLink className="w-4 h-4" />
-            See more photos on Google Drive
-          </a>
-        </div>
       </div>
     </section>
   );
@@ -3119,11 +2786,6 @@ export default function App() {
     await loadTournament();
   };
 
-  const handleMatchReset = async (matchId: string) => {
-    await api.resetMatch(matchId);
-    await loadTournament();
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50/80 via-white to-teal-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
       <ComingSoonBanner />
@@ -3184,7 +2846,6 @@ export default function App() {
         adminMode={adminMode}
         search={globalSearch}
         onMatchUpdate={handleMatchUpdate}
-        onMatchReset={handleMatchReset}
       />
       <TournamentInfo />
       <Gallery adminMode={adminMode} />

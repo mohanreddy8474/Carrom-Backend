@@ -17,20 +17,6 @@ export interface ApiGroup {
   name: string;
 }
 
-export interface ApiGroupPlayer {
-  id: string;
-  group_id: string;
-  player_id: string;
-  group_position: number | null;
-}
-
-export interface ApiGroupTeam {
-  id: string;
-  group_id: string;
-  team_id: string;
-  group_position: number | null;
-}
-
 export interface ApiPlayer {
   id: string;
   name: string;
