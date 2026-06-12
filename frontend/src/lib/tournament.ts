@@ -1,5 +1,12 @@
 // Integration: maps FastAPI responses into the UI shapes used by App.tsx
-import { api, ApiCategory, ApiMatch, ApiPlayer, ApiTeam, MatchStatus as ApiMatchStatus } from "./api";
+import {
+  api,
+  ApiCategory,
+  ApiMatch,
+  ApiPlayer,
+  ApiTeam,
+  MatchStatus as ApiMatchStatus,
+} from "./api";
 
 export type UiMatchStatus = "Scheduled" | "Live" | "Completed";
 
@@ -11,6 +18,8 @@ export interface PlayerStanding {
   losses: number;
   points: number;
   score: number;
+  participantType: "PLAYER" | "TEAM";
+  employeeId?: string | null;
 }
 
 export interface GroupMatch {
@@ -19,6 +28,10 @@ export interface GroupMatch {
   playerB: string;
   participant1Id: string;
   participant2Id: string;
+  participant1Type: "PLAYER" | "TEAM";
+  participant2Type: "PLAYER" | "TEAM";
+  participant1EmployeeId?: string | null;
+  participant2EmployeeId?: string | null;
   winnerParticipantId: string | null;
   winnerScore: number | null;
   loserScore: number | null;
@@ -68,13 +81,27 @@ export function playerScoresForMatch(match: GroupMatch): {
   };
 }
 
-function mapMatch(match: ApiMatch): GroupMatch {
+function mapMatch(
+  match: ApiMatch,
+  playerById: Map<string, ApiPlayer>,
+): GroupMatch {
+  const getEmployeeId = (participantId: string, participantType: "PLAYER" | "TEAM") => {
+    if (participantType === "PLAYER") {
+      return playerById.get(participantId)?.employee_id;
+    }
+    return undefined;
+  };
+
   return {
     id: match.id,
     playerA: match.participant1_name || "TBD",
     playerB: match.participant2_name || "TBD",
     participant1Id: match.participant1_id,
     participant2Id: match.participant2_id,
+    participant1Type: match.participant_type,
+    participant2Type: match.participant_type,
+    participant1EmployeeId: getEmployeeId(match.participant1_id, match.participant_type),
+    participant2EmployeeId: getEmployeeId(match.participant2_id, match.participant_type),
     winnerParticipantId: match.winner_participant_id,
     winnerScore: match.winner_score,
     loserScore: match.loser_score,
@@ -93,41 +120,49 @@ export async function fetchTournamentData(): Promise<{
     api.getPlayers(),
     api.getTeams(),
   ]);
+  const playerById = new Map(players.map((player) => [player.id, player]));
 
-  const tournament: CategoryData[] = [];
+  const tournament = await Promise.all(
+    categories.map(async (category) => {
+      const groups = await api.getGroups(category.id);
+      const groupData = await Promise.all(
+        groups.map(async (group) => {
+          const [standingsData, matches] = await Promise.all([
+            api.getStandings(group.id),
+            api.getGroupMatches(group.id),
+          ]);
 
-  for (const category of categories) {
-    const groups = await api.getGroups(category.id);
-    const groupData: TournamentGroup[] = [];
+          const standings = standingsData.map((s) => ({
+            id: s.participant_id,
+            name: s.display_name,
+            matchesPlayed: s.matches_played,
+            wins: s.wins,
+            losses: s.losses,
+            points: s.tournament_points,
+            score: s.score,
+            participantType: s.participant_type,
+            employeeId:
+              s.participant_type === "PLAYER"
+                ? playerById.get(s.participant_id)?.employee_id
+                : undefined,
+          }));
 
-    for (const group of groups) {
-      const [standings, matches] = await Promise.all([
-        api.getStandings(group.id),
-        api.getGroupMatches(group.id),
-      ]);
+          return {
+            id: group.id,
+            name: group.name,
+            standings,
+            matches: matches.map((m) => mapMatch(m, playerById)),
+          };
+        }),
+      );
 
-      groupData.push({
-        id: group.id,
-        name: group.name,
-        standings: standings.map((s) => ({
-          id: s.participant_id,
-          name: s.display_name,
-          matchesPlayed: s.matches_played,
-          wins: s.wins,
-          losses: s.losses,
-          points: s.tournament_points,
-          score: s.score,
-        })),
-        matches: matches.map(mapMatch),
-      });
-    }
-
-    tournament.push({
-      category: categoryDisplayName(category),
-      categoryId: category.id,
-      groups: groupData,
-    });
-  }
+      return {
+        category: categoryDisplayName(category),
+        categoryId: category.id,
+        groups: groupData,
+      };
+    }),
+  );
 
   return { tournament, categories, players, teams };
 }
