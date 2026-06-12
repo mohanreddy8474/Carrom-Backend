@@ -118,6 +118,7 @@ export const fastapiClient = {
         status: "SCHEDULED",
         winner_participant_id: null,
         winner_score: null,
+        loser_score: null,
       }),
     }),
 
@@ -127,6 +128,7 @@ export const fastapiClient = {
       status?: MatchStatus;
       winner_participant_id?: string;
       winner_score?: number;
+      loser_score?: number;
     },
   ) =>
     request<ApiMatch>(`/matches/${matchId}`, {

@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS matches (
   status match_status NOT NULL DEFAULT 'SCHEDULED',
   winner_participant_id uuid,
   winner_score integer,
+  loser_score integer,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (participant1_id < participant2_id)
@@ -372,7 +373,8 @@ DECLARE
 BEGIN
   IF NEW.status = 'SCHEDULED'
      AND NEW.winner_participant_id IS NULL
-     AND NEW.winner_score IS NULL THEN
+     AND NEW.winner_score IS NULL
+     AND NEW.loser_score IS NULL THEN
     NEW.updated_at := now();
     RETURN NEW;
   END IF;
@@ -380,7 +382,7 @@ BEGIN
   IF OLD.status = 'COMPLETED' AND NEW.status = 'COMPLETED' THEN
     IF NEW.winner_participant_id IS DISTINCT FROM OLD.winner_participant_id
        OR NEW.winner_score IS DISTINCT FROM OLD.winner_score THEN
-      RAISE EXCEPTION 'Winner information cannot be modified for completed matches';
+      RAISE EXCEPTION 'Winner cannot be modified for completed matches';
     END IF;
   END IF;
 
@@ -390,6 +392,11 @@ BEGIN
       OR NEW.winner_score IS DISTINCT FROM OLD.winner_score)
      AND v_new_status <> 'COMPLETED' THEN
     RAISE EXCEPTION 'Winner information can only be set when status is COMPLETED';
+  END IF;
+
+  IF NEW.loser_score IS DISTINCT FROM OLD.loser_score
+     AND v_new_status <> 'COMPLETED' THEN
+    RAISE EXCEPTION 'loser_score can only be set when status is COMPLETED';
   END IF;
 
   IF v_new_status = 'COMPLETED' THEN
@@ -430,10 +437,12 @@ BEGIN
   SET status = 'SCHEDULED',
       winner_participant_id = NULL,
       winner_score = NULL,
+      loser_score = NULL,
       updated_at = now()
   WHERE status IN ('COMPLETED', 'LIVE')
      OR winner_participant_id IS NOT NULL
-     OR winner_score IS NOT NULL;
+     OR winner_score IS NOT NULL
+     OR loser_score IS NOT NULL;
 
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
@@ -586,7 +595,6 @@ BEGIN
     ('Rohini Priyamvada K', '45390', 'FEMALE'),
     ('Batta Malleswari', '45400', 'FEMALE'),
     ('Prashanth Charla', '45845', 'MALE'),
-    ('Chaitanya Kumar', '45938', 'MALE'),
     ('Bhargav Potnuri', '45988', 'MALE'),
     ('Varun Manireddy', '46235', 'MALE'),
     ('Shiva Chaudhari', '46774', 'MALE'),
@@ -627,8 +635,8 @@ BEGIN
     ('Group C', '43702', 4), ('Group C', '44526', 5), ('Group C', '44320', 6), ('Group C', '42490', 7),
     ('Group D', '44963', 1), ('Group D', '28548', 2), ('Group D', '44290', 3),
     ('Group D', '42190', 4), ('Group D', '42558', 5), ('Group D', '39592', 6), ('Group D', '44854', 7),
-    ('Group E', '45988', 1), ('Group E', '43310', 2), ('Group E', '45938', 3),
-    ('Group E', '45389', 4), ('Group E', '48370', 5), ('Group E', '45142', 6), ('Group E', '42390', 7),
+    ('Group E', '45988', 1), ('Group E', '43310', 2),
+    ('Group E', '45389', 3), ('Group E', '48370', 4), ('Group E', '45142', 5), ('Group E', '42390', 6),
     ('Group F', '44606', 1), ('Group F', '44501', 2), ('Group F', '42746', 3),
     ('Group F', '45246', 4), ('Group F', '41018', 5), ('Group F', '42543', 6),
     ('Group G', '44026', 1), ('Group G', '25926', 2), ('Group G', '31133', 3),

@@ -102,7 +102,10 @@ export function computeStandings(
     }
 
     const loserRow = stats.get(loser);
-    if (loserRow) loserRow.losses += 1;
+    if (loserRow) {
+      loserRow.losses += 1;
+      loserRow.score += match.loser_score ?? 0;
+    }
   }
 
   const standings: ApiStanding[] = [...stats.entries()].map(([participant_id, data]) => ({

@@ -21,6 +21,7 @@ export interface GroupMatch {
   participant2Id: string;
   winnerParticipantId: string | null;
   winnerScore: number | null;
+  loserScore: number | null;
   status: UiMatchStatus;
 }
 
@@ -53,6 +54,20 @@ export function toApiStatus(status: UiMatchStatus): ApiMatchStatus {
   return "SCHEDULED";
 }
 
+export function playerScoresForMatch(match: GroupMatch): {
+  playerAScore: number | null;
+  playerBScore: number | null;
+} {
+  if (!match.winnerParticipantId) {
+    return { playerAScore: null, playerBScore: null };
+  }
+  const winnerIsA = match.winnerParticipantId === match.participant1Id;
+  return {
+    playerAScore: winnerIsA ? match.winnerScore : match.loserScore,
+    playerBScore: winnerIsA ? match.loserScore : match.winnerScore,
+  };
+}
+
 function mapMatch(match: ApiMatch): GroupMatch {
   return {
     id: match.id,
@@ -62,6 +77,7 @@ function mapMatch(match: ApiMatch): GroupMatch {
     participant2Id: match.participant2_id,
     winnerParticipantId: match.winner_participant_id,
     winnerScore: match.winner_score,
+    loserScore: match.loser_score,
     status: toUiStatus(match.status),
   };
 }

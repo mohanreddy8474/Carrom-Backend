@@ -18,6 +18,7 @@ class MatchResponse(BaseModel):
     status: MatchStatus
     winner_participant_id: uuid.UUID | None
     winner_score: int | None
+    loser_score: int | None
     created_at: datetime
     updated_at: datetime
     participant1_name: str | None = None
@@ -28,3 +29,4 @@ class MatchUpdate(BaseModel):
     status: MatchStatus | None = None
     winner_participant_id: uuid.UUID | None = None
     winner_score: int | None = None
+    loser_score: int | None = None

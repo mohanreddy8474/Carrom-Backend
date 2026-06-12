@@ -15,24 +15,30 @@ def get_match(db: Session, match_id: uuid.UUID) -> Match:
     return match
 
 
+def _score_fields_changed(data: MatchUpdate) -> bool:
+    return (
+        data.winner_participant_id is not None
+        or data.winner_score is not None
+        or data.loser_score is not None
+    )
+
+
 def update_match(db: Session, match_id: uuid.UUID, data: MatchUpdate) -> Match:
     match = get_match(db, match_id)
 
-    if match.status == MatchStatus.COMPLETED:
-        if data.winner_participant_id is not None or data.winner_score is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Winner information cannot be modified for completed matches",
-            )
+    if match.status == MatchStatus.COMPLETED and _score_fields_changed(data):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Winner information cannot be modified for completed matches",
+        )
 
     new_status = data.status if data.status is not None else match.status
 
-    if data.winner_participant_id is not None or data.winner_score is not None:
-        if new_status != MatchStatus.COMPLETED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Winner information can only be set when status is COMPLETED",
-            )
+    if _score_fields_changed(data) and new_status != MatchStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Winner information can only be set when status is COMPLETED",
+        )
 
     if new_status == MatchStatus.COMPLETED:
         winner_id = (
@@ -55,9 +61,15 @@ def update_match(db: Session, match_id: uuid.UUID, data: MatchUpdate) -> Match:
             )
         match.winner_participant_id = winner_id
         match.winner_score = winner_score
+        if data.loser_score is not None:
+            match.loser_score = data.loser_score
 
     if data.status is not None:
         match.status = data.status
+        if data.status == MatchStatus.SCHEDULED:
+            match.winner_participant_id = None
+            match.winner_score = None
+            match.loser_score = None
 
     db.commit()
     db.refresh(match)

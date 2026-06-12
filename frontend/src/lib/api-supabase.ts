@@ -488,6 +488,7 @@ export const supabaseClient = {
         status: "SCHEDULED",
         winner_participant_id: null,
         winner_score: null,
+        loser_score: null,
       })
       .eq("id", matchId)
       .select()
@@ -504,6 +505,7 @@ export const supabaseClient = {
       status?: MatchStatus;
       winner_participant_id?: string;
       winner_score?: number;
+      loser_score?: number;
     },
   ): Promise<ApiMatch> => {
     const sb = requireSupabase();
@@ -513,6 +515,12 @@ export const supabaseClient = {
       payload.winner_participant_id = data.winner_participant_id;
     }
     if (data.winner_score !== undefined) payload.winner_score = data.winner_score;
+    if (data.loser_score !== undefined) payload.loser_score = data.loser_score;
+    if (data.status === "SCHEDULED") {
+      payload.winner_participant_id = null;
+      payload.winner_score = null;
+      payload.loser_score = null;
+    }
 
     const { data: row, error } = await sb
       .from("matches")

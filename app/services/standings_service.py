@@ -80,6 +80,7 @@ def calculate_standings(db: Session, group_id: uuid.UUID) -> list[StandingEntry]
         if loser in stats:
             stats[loser]["losses"] += 1
             stats[loser]["tournament_points"] += LOSS_POINTS
+            stats[loser]["score"] += match.loser_score or 0
 
     standings = [
         StandingEntry(

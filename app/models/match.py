@@ -35,6 +35,7 @@ class Match(Base):
         UUID(as_uuid=True), nullable=True
     )
     winner_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    loser_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

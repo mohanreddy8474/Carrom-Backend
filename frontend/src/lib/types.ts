@@ -77,6 +77,7 @@ export interface ApiMatch {
   status: MatchStatus;
   winner_participant_id: string | null;
   winner_score: number | null;
+  loser_score: number | null;
   participant1_name?: string | null;
   participant2_name?: string | null;
   created_at: string;

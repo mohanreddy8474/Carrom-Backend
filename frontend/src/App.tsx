@@ -28,6 +28,7 @@ import {
   X,
   Zap,
   ExternalLink,
+  Download,
 } from "lucide-react";
 import {
   api,
@@ -52,8 +53,15 @@ import {
   PlayerStanding,
   TournamentGroup,
   fetchTournamentData,
+  playerScoresForMatch,
   toApiStatus,
 } from "./lib/tournament";
+import {
+  exportMatchScheduleExcel,
+  exportTournamentExcel,
+  hasAnyGroups,
+  hasAnyMatches,
+} from "./lib/export-excel";
 
 const publicAsset = (file: string) => `${import.meta.env.BASE_URL}${file}`;
 
@@ -96,15 +104,23 @@ function patchMatchInTournament(
     status?: MatchStatus;
     winnerParticipantId?: string | null;
     winnerScore?: number | null;
+    loserScore?: number | null;
   },
 ): CategoryData[] {
   return data.map((cat) => ({
     ...cat,
     groups: cat.groups.map((grp) => ({
       ...grp,
-      matches: grp.matches.map((m) =>
-        m.id === matchId ? { ...m, ...update } : m,
-      ),
+      matches: grp.matches.map((m) => {
+        if (m.id !== matchId) return m;
+        const next = { ...m, ...update };
+        if (update.status === "Scheduled") {
+          next.winnerParticipantId = null;
+          next.winnerScore = null;
+          next.loserScore = null;
+        }
+        return next;
+      }),
     })),
   }));
 }
@@ -2345,36 +2361,45 @@ function MatchAdminControls({
       status?: MatchStatus;
       winnerParticipantId?: string;
       winnerScore?: number;
+      loserScore?: number;
     },
   ) => Promise<void>;
 }) {
   const [winnerId, setWinnerId] = useState(
     match.winnerParticipantId || match.participant1Id,
   );
-  const [winnerScore, setWinnerScore] = useState(
-    String(match.winnerScore ?? ""),
-  );
+  const [winnerScore, setWinnerScore] = useState(String(match.winnerScore ?? ""));
+  const [loserScore, setLoserScore] = useState(String(match.loserScore ?? ""));
+
+  const winnerName =
+    winnerId === match.participant1Id ? match.playerA : match.playerB;
+  const loserName =
+    winnerId === match.participant1Id ? match.playerB : match.playerA;
 
   useEffect(() => {
     setWinnerId(match.winnerParticipantId || match.participant1Id);
     setWinnerScore(String(match.winnerScore ?? ""));
+    setLoserScore(String(match.loserScore ?? ""));
   }, [
     match.id,
     match.status,
     match.winnerParticipantId,
     match.winnerScore,
+    match.loserScore,
     match.participant1Id,
   ]);
 
   const resetMatchForm = () => {
     setWinnerId(match.participant1Id);
     setWinnerScore("");
+    setLoserScore("");
   };
 
   const handleSave = async (update: {
     status?: MatchStatus;
     winnerParticipantId?: string;
     winnerScore?: number;
+    loserScore?: number;
   }) => {
     await onSave(match, update);
     if (update.status === "Completed") {
@@ -2382,15 +2407,20 @@ function MatchAdminControls({
     }
   };
 
+  const { playerAScore, playerBScore } = playerScoresForMatch(match);
+
   if (match.status === "Completed") {
-    const winnerName =
+    const completedWinnerName =
       match.winnerParticipantId === match.participant1Id
         ? match.playerA
         : match.playerB;
     return (
       <div className="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
-        <span>Winner: {winnerName}</span>
-        <span>Score: {match.winnerScore ?? "—"}</span>
+        <span>Winner: {completedWinnerName}</span>
+        <span>
+          {match.playerA}: {playerAScore ?? "—"} · {match.playerB}:{" "}
+          {playerBScore ?? "—"}
+        </span>
         <span
           className={`px-2 py-0.5 rounded-full text-xs font-bold w-fit bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300`}
         >
@@ -2434,23 +2464,53 @@ function MatchAdminControls({
         <option value={match.participant1Id}>{match.playerA}</option>
         <option value={match.participant2Id}>{match.playerB}</option>
       </select>
-      <input
-        type="number"
-        value={winnerScore}
-        onChange={(e) => setWinnerScore(e.target.value)}
-        className="w-20 px-2 py-0.5 rounded border text-xs"
-        placeholder="Score"
-        min={0}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1 text-xs">
+          <span className="text-slate-500 max-w-[7rem] truncate">
+            {winnerName}
+          </span>
+          <input
+            type="number"
+            value={winnerScore}
+            onChange={(e) => setWinnerScore(e.target.value)}
+            className="w-16 px-2 py-0.5 rounded border text-xs"
+            placeholder="0"
+            min={0}
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs">
+          <span className="text-slate-500 max-w-[7rem] truncate">
+            {loserName}
+          </span>
+          <input
+            type="number"
+            value={loserScore}
+            onChange={(e) => setLoserScore(e.target.value)}
+            className="w-16 px-2 py-0.5 rounded border text-xs"
+            placeholder="optional"
+            min={0}
+          />
+        </label>
+      </div>
       <button
         onClick={() => {
-          const score = Number(winnerScore);
-          if (!winnerId || Number.isNaN(score)) return;
-          void handleSave({
+          const wScore = Number(winnerScore);
+          if (!winnerId || Number.isNaN(wScore)) return;
+          const update: {
+            status: MatchStatus;
+            winnerParticipantId: string;
+            winnerScore: number;
+            loserScore?: number;
+          } = {
             status: "Completed",
             winnerParticipantId: winnerId,
-            winnerScore: score,
-          });
+            winnerScore: wScore,
+          };
+          if (loserScore.trim() !== "") {
+            const lScore = Number(loserScore);
+            if (!Number.isNaN(lScore)) update.loserScore = lScore;
+          }
+          void handleSave(update);
         }}
         className="text-xs text-accent-teal hover:underline text-left"
       >
@@ -2549,6 +2609,7 @@ function CategoryTournamentSection({
       status?: MatchStatus;
       winnerParticipantId?: string;
       winnerScore?: number;
+      loserScore?: number;
     },
   ) => Promise<void>;
 }) {
@@ -2603,6 +2664,7 @@ function CategoryTournamentSection({
       status?: MatchStatus;
       winnerParticipantId?: string;
       winnerScore?: number;
+      loserScore?: number;
     },
   ) => {
     await onMatchUpdate(match.id, update);
@@ -2619,6 +2681,27 @@ function CategoryTournamentSection({
           subtitle="Category → Groups → Standings & matches"
           icon={Trophy}
         />
+
+        <div className="flex flex-wrap justify-center gap-3 mb-8">
+          <button
+            type="button"
+            onClick={() => void exportTournamentExcel(data)}
+            disabled={!hasAnyGroups(data)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-teal text-white font-semibold text-sm shadow-lg shadow-accent-teal/25 hover:bg-accent-teal/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Download Excel (group standings)
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportMatchScheduleExcel(data)}
+            disabled={!hasAnyMatches(data)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-board-dark dark:bg-board text-white font-semibold text-sm shadow-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Download Excel (match schedule)
+          </button>
+        </div>
 
         <CategoryTabs
           categories={categories}
@@ -2749,7 +2832,9 @@ function CategoryTournamentSection({
                     Matches
                   </h4>
                   <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                    {activeGroup.matches.map((match, mi) => (
+                    {activeGroup.matches.map((match, mi) => {
+                      const scores = playerScoresForMatch(match);
+                      return (
                       <div
                         key={match.id}
                         className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-xl glass text-sm ${
@@ -2778,15 +2863,24 @@ function CategoryTournamentSection({
                               onSave={saveMatch}
                             />
                           ) : (
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[match.status]}`}
-                            >
-                              {match.status}
-                            </span>
+                            <div className="flex flex-col gap-1 items-start">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[match.status]}`}
+                              >
+                                {match.status}
+                              </span>
+                              {match.status === "Completed" && (
+                                <span className="text-xs text-slate-500">
+                                  {match.playerA}: {scores.playerAScore ?? "—"}{" "}
+                                  · {match.playerB}: {scores.playerBScore ?? "—"}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 </div>
               </div>
@@ -3222,6 +3316,7 @@ export default function App() {
       status?: MatchStatus;
       winnerParticipantId?: string;
       winnerScore?: number;
+      loserScore?: number;
     },
   ) => {
     setTournament((prev) =>
@@ -3229,6 +3324,7 @@ export default function App() {
         status: update.status,
         winnerParticipantId: update.winnerParticipantId,
         winnerScore: update.winnerScore,
+        loserScore: update.loserScore,
       }),
     );
 
@@ -3237,6 +3333,7 @@ export default function App() {
         status: update.status ? toApiStatus(update.status) : undefined,
         winner_participant_id: update.winnerParticipantId,
         winner_score: update.winnerScore,
+        loser_score: update.loserScore,
       });
       await loadTournament(true);
 

@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS matches (
   status match_status NOT NULL DEFAULT 'SCHEDULED',
   winner_participant_id uuid,
   winner_score integer,
+  loser_score integer,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (participant1_id < participant2_id)
@@ -369,7 +370,8 @@ DECLARE
 BEGIN
   IF NEW.status = 'SCHEDULED'
      AND NEW.winner_participant_id IS NULL
-     AND NEW.winner_score IS NULL THEN
+     AND NEW.winner_score IS NULL
+     AND NEW.loser_score IS NULL THEN
     NEW.updated_at := now();
     RETURN NEW;
   END IF;
@@ -377,7 +379,7 @@ BEGIN
   IF OLD.status = 'COMPLETED' AND NEW.status = 'COMPLETED' THEN
     IF NEW.winner_participant_id IS DISTINCT FROM OLD.winner_participant_id
        OR NEW.winner_score IS DISTINCT FROM OLD.winner_score THEN
-      RAISE EXCEPTION 'Winner information cannot be modified for completed matches';
+      RAISE EXCEPTION 'Winner cannot be modified for completed matches';
     END IF;
   END IF;
 
@@ -387,6 +389,11 @@ BEGIN
       OR NEW.winner_score IS DISTINCT FROM OLD.winner_score)
      AND v_new_status <> 'COMPLETED' THEN
     RAISE EXCEPTION 'Winner information can only be set when status is COMPLETED';
+  END IF;
+
+  IF NEW.loser_score IS DISTINCT FROM OLD.loser_score
+     AND v_new_status <> 'COMPLETED' THEN
+    RAISE EXCEPTION 'loser_score can only be set when status is COMPLETED';
   END IF;
 
   IF v_new_status = 'COMPLETED' THEN
@@ -427,10 +434,12 @@ BEGIN
   SET status = 'SCHEDULED',
       winner_participant_id = NULL,
       winner_score = NULL,
+      loser_score = NULL,
       updated_at = now()
   WHERE status IN ('COMPLETED', 'LIVE')
      OR winner_participant_id IS NOT NULL
-     OR winner_score IS NOT NULL;
+     OR winner_score IS NOT NULL
+     OR loser_score IS NOT NULL;
 
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
