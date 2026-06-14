@@ -3191,17 +3191,6 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
   );
 }
 
-function ComingSoonBanner() {
-  return (
-    <div className="bg-gradient-to-r from-board-dark via-accent-teal to-board-dark text-white py-3 text-center text-sm font-medium">
-      <span className="inline-flex items-center gap-2">
-        <Sparkles className="w-4 h-4" />
-        Coming Soon: Live streaming, player profiles & match highlights
-        <Sparkles className="w-4 h-4" />
-      </span>
-    </div>
-  );
-}
 
 function Footer() {
   return (
@@ -3454,7 +3443,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50/80 via-white to-teal-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
-      <ComingSoonBanner />
       <Navbar
         dark={dark}
         toggleTheme={() => setDark((d) => !d)}
