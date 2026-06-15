@@ -170,14 +170,7 @@ RETURNS integer
 LANGUAGE plpgsql
 STABLE
 AS $$
-DECLARE
-  fmt category_format;
-  gen gender;
 BEGIN
-  SELECT format, gender INTO fmt, gen FROM categories WHERE id = cat_id;
-  IF fmt = 'SINGLES' AND gen = 'FEMALE' THEN
-    RETURN 2;
-  END IF;
   RETURN 1;
 END;
 $$;

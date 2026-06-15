@@ -166,3 +166,64 @@ export async function fetchTournamentData(): Promise<{
 
   return { tournament, categories, players, teams };
 }
+
+export interface MatchProgress {
+  completed: number;
+  total: number;
+}
+
+export interface GroupMatchProgress extends MatchProgress {
+  groupId: string;
+  group: string;
+}
+
+export interface CategoryMatchProgress extends MatchProgress {
+  category: string;
+  groups: GroupMatchProgress[];
+}
+
+export interface TournamentMatchProgress {
+  total: MatchProgress;
+  byCategory: CategoryMatchProgress[];
+}
+
+export function matchProgressFromMatches(matches: GroupMatch[]): MatchProgress {
+  const total = matches.length;
+  const completed = matches.filter((m) => m.status === "Completed").length;
+  return { completed, total };
+}
+
+export function formatMatchProgress(
+  progress: MatchProgress,
+  { suffix = " completed" }: { suffix?: string } = {},
+): string {
+  const { completed, total } = progress;
+  return `${completed}/${total}${suffix}`;
+}
+
+export function computeTournamentMatchProgress(
+  data: CategoryData[],
+): TournamentMatchProgress {
+  const byCategory = data.map((cat) => {
+    const groups = cat.groups.map((group) => ({
+      groupId: group.id,
+      group: group.name,
+      ...matchProgressFromMatches(group.matches),
+    }));
+    const categoryMatches = cat.groups.flatMap((g) => g.matches);
+    return {
+      category: cat.category,
+      ...matchProgressFromMatches(categoryMatches),
+      groups,
+    };
+  });
+
+  const allMatches = data.flatMap((cat) =>
+    cat.groups.flatMap((g) => g.matches),
+  );
+
+  return {
+    total: matchProgressFromMatches(allMatches),
+    byCategory,
+  };
+}

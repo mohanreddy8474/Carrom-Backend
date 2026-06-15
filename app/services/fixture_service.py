@@ -3,19 +3,14 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models.category import Category
-from app.models.enums import CategoryFormat, Gender, MatchStatus, ParticipantType
+from app.models.enums import MatchStatus, ParticipantType
 from app.models.group import Group
 from app.models.match import Match
 from app.utils.participants import normalize_pair
 
 
-def matches_per_pair_for_category(category: Category) -> int:
-    """Women's singles groups play each opponent twice; all others play once."""
-    if (
-        category.format == CategoryFormat.SINGLES
-        and category.gender == Gender.FEMALE
-    ):
-        return 2
+def matches_per_pair_for_category(_category: Category) -> int:
+    """Each pairing plays once per group."""
     return 1
 
 
