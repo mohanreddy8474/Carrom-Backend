@@ -152,8 +152,23 @@ function LiveMatchesBanner({
             className="p-4 rounded-xl bg-white/60 dark:bg-slate-900/40 border border-red-500/20"
           >
             <p className="text-xl font-bold">
-              {match.playerA}{" "}
-              <span className="text-red-500 mx-2">vs</span> {match.playerB}
+              <PlayerLink
+                name={match.playerA}
+                employeeId={
+                  match.participant1Type === "PLAYER"
+                    ? match.participant1EmployeeId
+                    : null
+                }
+              />
+              <span className="text-red-500 mx-2">vs</span>
+              <PlayerLink
+                name={match.playerB}
+                employeeId={
+                  match.participant2Type === "PLAYER"
+                    ? match.participant2EmployeeId
+                    : null
+                }
+              />
             </p>
             <p className="text-sm text-slate-500 mt-1">
               {group} · {category}
@@ -167,7 +182,6 @@ function LiveMatchesBanner({
     </motion.div>
   );
 }
-
 
 const RULES_CATEGORIES = [
   {
@@ -444,9 +458,7 @@ function autoShoot(sim: CarromSim) {
 }
 
 function coinsDisplaced(sim: CarromSim) {
-  return sim.coins.some(
-    (c) => Math.hypot(c.x - c.homeX, c.y - c.homeY) > 0.35,
-  );
+  return sim.coins.some((c) => Math.hypot(c.x - c.homeX, c.y - c.homeY) > 0.35);
 }
 
 function hasMotion(sim: CarromSim) {
@@ -877,32 +889,36 @@ function CarromBoardBackground() {
 
       <div className="absolute inset-0">
         {frame.coins.map((coin) => {
-              if (reduceMotion) {
-                return (
-                  <div
-                    key={coin.id}
-                    className="absolute -translate-x-1/2 -translate-y-1/2"
-                    style={{ left: `${coin.homeX}%`, top: `${coin.homeY}%` }}
-                  >
-                    <FloatingCarromCoin color={coin.color} floating delay={coin.id * 0.35} />
-                  </div>
-                );
-              }
-              const moving = Math.hypot(coin.vx, coin.vy) > STOP_SPEED;
-              return (
-                <div
-                  key={coin.id}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 will-change-[left,top]"
-                  style={{ left: `${coin.x}%`, top: `${coin.y}%` }}
-                >
-                  <FloatingCarromCoin
-                    color={coin.color}
-                    floating={!moving && !boardMoving}
-                    delay={coin.id * 0.35}
-                  />
-                </div>
-              );
-            })}
+          if (reduceMotion) {
+            return (
+              <div
+                key={coin.id}
+                className="absolute -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${coin.homeX}%`, top: `${coin.homeY}%` }}
+              >
+                <FloatingCarromCoin
+                  color={coin.color}
+                  floating
+                  delay={coin.id * 0.35}
+                />
+              </div>
+            );
+          }
+          const moving = Math.hypot(coin.vx, coin.vy) > STOP_SPEED;
+          return (
+            <div
+              key={coin.id}
+              className="absolute -translate-x-1/2 -translate-y-1/2 will-change-[left,top]"
+              style={{ left: `${coin.x}%`, top: `${coin.y}%` }}
+            >
+              <FloatingCarromCoin
+                color={coin.color}
+                floating={!moving && !boardMoving}
+                delay={coin.id * 0.35}
+              />
+            </div>
+          );
+        })}
       </div>
 
       <div
@@ -918,6 +934,34 @@ function CarromBoardBackground() {
         </div>
       </div>
     </div>
+  );
+}
+
+function PlayerLink({
+  name,
+  employeeId,
+  className = "",
+  adminMode = false,
+}: {
+  name: string;
+  employeeId?: string | null;
+  className?: string;
+  adminMode?: boolean;
+}) {
+  if (adminMode || !employeeId) {
+    return <span className={className}>{name}</span>;
+  }
+
+  return (
+    <a
+      href={`https://jigsaw.thoughtworks.net/consultants/${employeeId}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`inline-flex items-center gap-1 hover:text-accent-teal transition-colors ${className}`}
+    >
+      {name}
+      <ExternalLink className="w-3.5 h-3.5 opacity-60" />
+    </a>
   );
 }
 
@@ -2087,7 +2131,9 @@ function AdminPanel({
               ))}
             </select>
             {groupAssignments.length === 0 && manageGroupId && (
-              <p className="text-xs text-slate-500">No members in this group.</p>
+              <p className="text-xs text-slate-500">
+                No members in this group.
+              </p>
             )}
             <ul className="space-y-2 max-h-40 overflow-y-auto">
               {groupAssignments.map((item) => (
@@ -2238,7 +2284,9 @@ function AdminPanel({
 
             {teams.some((t) => !t.is_active) && (
               <>
-                <p className="text-sm font-medium pt-2">Reactivate doubles team</p>
+                <p className="text-sm font-medium pt-2">
+                  Reactivate doubles team
+                </p>
                 <select
                   value={reactivateTeamCategoryId}
                   onChange={(e) => {
@@ -2264,7 +2312,8 @@ function AdminPanel({
                   {teams
                     .filter(
                       (t) =>
-                        !t.is_active && t.category_id === reactivateTeamCategoryId,
+                        !t.is_active &&
+                        t.category_id === reactivateTeamCategoryId,
                     )
                     .map((t) => (
                       <option key={t.id} value={t.id}>
@@ -2369,7 +2418,9 @@ function MatchAdminControls({
   const [winnerId, setWinnerId] = useState(
     match.winnerParticipantId || match.participant1Id,
   );
-  const [winnerScore, setWinnerScore] = useState(String(match.winnerScore ?? ""));
+  const [winnerScore, setWinnerScore] = useState(
+    String(match.winnerScore ?? ""),
+  );
   const [loserScore, setLoserScore] = useState(String(match.loserScore ?? ""));
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
 
@@ -2648,6 +2699,7 @@ function CategoryTournamentSection({
   categories,
   activeCategory,
   setActiveCategory,
+  isLoading,
   adminMode,
   search,
   onMatchUpdate,
@@ -2656,6 +2708,7 @@ function CategoryTournamentSection({
   categories: string[];
   activeCategory: Category;
   setActiveCategory: (c: Category) => void;
+  isLoading: boolean;
   adminMode: boolean;
   search: string;
   onMatchUpdate: (
@@ -2679,6 +2732,7 @@ function CategoryTournamentSection({
   };
 
   const filteredGroups = useMemo(() => {
+    if (isLoading) return [];
     if (!categoryData) return [];
     const q = search.toLowerCase().trim();
     if (!q) return categoryData.groups;
@@ -2697,7 +2751,7 @@ function CategoryTournamentSection({
         return matchHit ? g : null;
       })
       .filter(Boolean) as TournamentGroup[];
-  }, [categoryData, search]);
+  }, [categoryData, search, isLoading]);
 
   useEffect(() => {
     if (filteredGroups.length === 0) {
@@ -2764,7 +2818,19 @@ function CategoryTournamentSection({
           onChange={setActiveCategory}
         />
 
-        {filteredGroups.length > 0 && (
+        {isLoading && (
+          <GlassCard hover={false} className="max-w-3xl mx-auto text-center">
+            <div className="flex items-center justify-center gap-3 text-accent-teal mb-3">
+              <div className="w-5 h-5 rounded-full border-2 border-accent-teal/30 border-t-accent-teal animate-spin" />
+              <span className="font-semibold">Loading standings...</span>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Fetching groups, standings, and matches.
+            </p>
+          </GlassCard>
+        )}
+
+        {!isLoading && filteredGroups.length > 0 && (
           <GroupTabs
             groups={filteredGroups}
             active={activeGroupId}
@@ -2772,7 +2838,7 @@ function CategoryTournamentSection({
           />
         )}
 
-        {activeGroup && (
+        {!isLoading && activeGroup && (
           <motion.div
             key={activeGroup.id}
             initial={{ opacity: 0, y: 16 }}
@@ -2811,7 +2877,15 @@ function CategoryTournamentSection({
                           {i + 1}
                         </span>
                         <Circle className="w-2 h-2 fill-board text-board" />
-                        {s.name}
+                        {s.participantType === "PLAYER" ? (
+                          <PlayerLink
+                            name={s.name}
+                            employeeId={s.employeeId}
+                            adminMode={adminMode}
+                          />
+                        ) : (
+                          s.name
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -2886,55 +2960,75 @@ function CategoryTournamentSection({
                     <Calendar className="w-5 h-5 text-accent-teal" />
                     Matches
                   </h4>
-                  <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[720px] overflow-y-auto pr-1">
                     {activeGroup.matches.map((match, mi) => {
                       const scores = playerScoresForMatch(match);
                       return (
-                      <div
-                        key={match.id}
-                        className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-xl glass text-sm ${
-                          match.status === "Live"
-                            ? "ring-2 ring-red-500/40"
-                            : ""
-                        }`}
-                      >
-                        <span className="text-xs font-mono text-slate-400 w-16">
-                          Match {mi + 1}
-                        </span>
-                        <div className="flex-1 font-medium">
-                          {match.playerA}{" "}
-                          <span className="text-accent-teal">vs</span>{" "}
-                          {match.playerB}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {activeGroup.name} · {activeCategory}
-                        </div>
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                          {adminMode ? (
-                            <MatchAdminControls
-                              match={match}
-                              groupName={activeGroup.name}
-                              categoryName={activeCategory}
-                              onSave={saveMatch}
-                            />
-                          ) : (
-                            <div className="flex flex-col gap-1 items-start">
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[match.status]}`}
-                              >
-                                {match.status}
-                              </span>
-                              {match.status === "Completed" && (
-                                <span className="text-xs text-slate-500">
-                                  {match.playerA}: {scores.playerAScore ?? "—"}{" "}
-                                  · {match.playerB}: {scores.playerBScore ?? "—"}
+                        <div
+                          key={match.id}
+                          className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-xl glass text-sm ${
+                            match.status === "Live"
+                              ? "ring-2 ring-red-500/40"
+                              : ""
+                          }`}
+                        >
+                          <span className="text-xs font-mono text-slate-400 w-16">
+                            Match {mi + 1}
+                          </span>
+                          <div className="flex-1 font-medium">
+                            {match.playerA}{" "}
+                            <span className="text-accent-teal">vs</span>{" "}
+                            {match.playerB}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {activeGroup.name} · {activeCategory}
+                          </div>
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                            {adminMode ? (
+                              <MatchAdminControls
+                                match={match}
+                                groupName={activeGroup.name}
+                                categoryName={activeCategory}
+                                onSave={saveMatch}
+                              />
+                            ) : (
+                              <div className="flex flex-col gap-1 items-start">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[match.status]}`}
+                                >
+                                  {match.status}
                                 </span>
-                              )}
-                            </div>
-                          )}
+                                {match.status === "Completed" && (
+                                  <span className="text-xs text-slate-500">
+                                    <PlayerLink
+                                      name={match.playerA}
+                                      employeeId={
+                                        match.participant1Type === "PLAYER"
+                                          ? match.participant1EmployeeId
+                                          : null
+                                      }
+                                      adminMode={adminMode}
+                                      className="text-xs"
+                                    />
+                                    : {scores.playerAScore ?? "—"} ·{" "}
+                                    <PlayerLink
+                                      name={match.playerB}
+                                      employeeId={
+                                        match.participant2Type === "PLAYER"
+                                          ? match.participant2EmployeeId
+                                          : null
+                                      }
+                                      adminMode={adminMode}
+                                      className="text-xs"
+                                    />
+                                    : {scores.playerBScore ?? "—"}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
+                      );
                     })}
                   </div>
                 </div>
@@ -2943,7 +3037,7 @@ function CategoryTournamentSection({
           </motion.div>
         )}
 
-        {filteredGroups.length === 0 && (
+        {!isLoading && filteredGroups.length === 0 && (
           <p className="text-center text-slate-500 py-12">
             No groups or players match your search in this category.
           </p>
@@ -3116,15 +3210,18 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {Array.from({ length: Math.min(3, GALLERY_PREVIEW_COUNT) }, (_, i) => (
-              <div
-                key={i}
-                className="aspect-square rounded-2xl glass flex flex-col items-center justify-center gap-2 text-slate-400"
-              >
-                <Camera className="w-10 h-10 opacity-40" />
-                <span className="text-sm font-medium">No photos yet</span>
-              </div>
-            ))}
+            {Array.from(
+              { length: Math.min(3, GALLERY_PREVIEW_COUNT) },
+              (_, i) => (
+                <div
+                  key={i}
+                  className="aspect-square rounded-2xl glass flex flex-col items-center justify-center gap-2 text-slate-400"
+                >
+                  <Camera className="w-10 h-10 opacity-40" />
+                  <span className="text-sm font-medium">No photos yet</span>
+                </div>
+              ),
+            )}
           </div>
         )}
 
@@ -3149,17 +3246,6 @@ function Gallery({ adminMode }: { adminMode: boolean }) {
   );
 }
 
-function ComingSoonBanner() {
-  return (
-    <div className="bg-gradient-to-r from-board-dark via-accent-teal to-board-dark text-white py-3 text-center text-sm font-medium">
-      <span className="inline-flex items-center gap-2">
-        <Sparkles className="w-4 h-4" />
-        Coming Soon: Live streaming, player profiles & match highlights
-        <Sparkles className="w-4 h-4" />
-      </span>
-    </div>
-  );
-}
 
 function Footer() {
   return (
@@ -3241,6 +3327,7 @@ export default function App() {
   const [teams, setTeams] = useState<ApiTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const initialLoadStartedRef = useRef(false);
 
   const countdown = useCountdown(TOURNAMENT_START);
 
@@ -3284,7 +3371,9 @@ export default function App() {
       setTeams(data.teams);
       setLoadError(null);
       setActiveCategory((current) =>
-        DISPLAY_CATEGORIES.includes(current as (typeof DISPLAY_CATEGORIES)[number])
+        DISPLAY_CATEGORIES.includes(
+          current as (typeof DISPLAY_CATEGORIES)[number],
+        )
           ? current
           : DISPLAY_CATEGORIES[0],
       );
@@ -3298,6 +3387,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (initialLoadStartedRef.current) return;
+    initialLoadStartedRef.current = true;
     void loadTournament();
   }, [loadTournament]);
 
@@ -3407,7 +3498,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50/80 via-white to-teal-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
-      <ComingSoonBanner />
       <Navbar
         dark={dark}
         toggleTheme={() => setDark((d) => !d)}
@@ -3460,6 +3550,7 @@ export default function App() {
         categories={categoryLabels}
         activeCategory={activeCategory}
         setActiveCategory={setActiveCategory}
+        isLoading={loading}
         adminMode={adminMode}
         search={globalSearch}
         onMatchUpdate={handleMatchUpdate}
