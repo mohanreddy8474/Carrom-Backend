@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Award,
@@ -2370,6 +2371,7 @@ function MatchAdminControls({
   );
   const [winnerScore, setWinnerScore] = useState(String(match.winnerScore ?? ""));
   const [loserScore, setLoserScore] = useState(String(match.loserScore ?? ""));
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
 
   const winnerName =
     winnerId === match.participant1Id ? match.playerA : match.playerB;
@@ -2407,6 +2409,70 @@ function MatchAdminControls({
     }
   };
 
+  const submitComplete = () => {
+    const wScoreRaw = winnerScore.trim();
+    const lScoreRaw = loserScore.trim();
+    const wScoreParsed = wScoreRaw === "" ? null : Number(wScoreRaw);
+    const lScoreParsed = lScoreRaw === "" ? null : Number(lScoreRaw);
+
+    if (wScoreParsed === null || Number.isNaN(wScoreParsed)) {
+      window.alert("Enter a valid winner score before completing the match.");
+      return;
+    }
+
+    const update: {
+      status: MatchStatus;
+      winnerParticipantId: string;
+      winnerScore: number;
+      loserScore?: number;
+    } = {
+      status: "Completed",
+      winnerParticipantId: winnerId,
+      winnerScore: wScoreParsed,
+    };
+    if (lScoreParsed !== null && !Number.isNaN(lScoreParsed)) {
+      update.loserScore = lScoreParsed;
+    }
+    setShowCompleteConfirm(false);
+    void handleSave(update);
+  };
+
+  const completeConfirmDialog =
+    showCompleteConfirm &&
+    createPortal(
+      <div
+        className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        onClick={() => setShowCompleteConfirm(false)}
+      >
+        <div
+          className="glass-strong rounded-2xl max-w-sm w-full p-6 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="font-display text-lg font-bold mb-2">Complete match?</p>
+          <p className="text-sm text-slate-500 mb-6">
+            Confirm to save this result.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <button
+              type="button"
+              onClick={() => setShowCompleteConfirm(false)}
+              className="px-4 py-2 rounded-xl glass text-sm font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submitComplete}
+              className="px-4 py-2 rounded-xl bg-accent-teal text-white text-sm font-semibold"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+
   const { playerAScore, playerBScore } = playerScoresForMatch(match);
 
   if (match.status === "Completed") {
@@ -2431,7 +2497,9 @@ function MatchAdminControls({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <>
+      {completeConfirmDialog}
+      <div className="flex flex-col gap-2">
       <select
         value={match.status}
         onChange={(e) => {
@@ -2493,24 +2561,10 @@ function MatchAdminControls({
         </label>
       </div>
       <button
-        onClick={() => {
-          const wScore = Number(winnerScore);
-          if (!winnerId || Number.isNaN(wScore)) return;
-          const update: {
-            status: MatchStatus;
-            winnerParticipantId: string;
-            winnerScore: number;
-            loserScore?: number;
-          } = {
-            status: "Completed",
-            winnerParticipantId: winnerId,
-            winnerScore: wScore,
-          };
-          if (loserScore.trim() !== "") {
-            const lScore = Number(loserScore);
-            if (!Number.isNaN(lScore)) update.loserScore = lScore;
-          }
-          void handleSave(update);
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowCompleteConfirm(true);
         }}
         className="text-xs text-accent-teal hover:underline text-left"
       >
@@ -2520,6 +2574,7 @@ function MatchAdminControls({
         {groupName} · {categoryName}
       </span>
     </div>
+    </>
   );
 }
 
